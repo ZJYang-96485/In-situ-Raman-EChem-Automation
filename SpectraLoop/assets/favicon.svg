@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">SpectraLoop</title>
+  <desc id="desc">A blue-to-cyan infinity mark with a Raman spectrum and spectral feature.</desc>
+  <defs>
+    <linearGradient id="loop" x1="74" x2="438" y1="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1876ff" />
+      <stop offset="0.52" stop-color="#12c4e8" />
+      <stop offset="1" stop-color="#10d9ad" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="72" fill="#061b3b" />
+  <path d="M74 256C122 174 192 174 256 256C320 338 390 338 438 256C390 174 320 174 256 256C192 338 122 338 74 256Z" fill="none" stroke="url(#loop)" stroke-linecap="round" stroke-linejoin="round" stroke-width="24" />
+  <path d="M112 280H130C137 280 140 260 146 260C152 260 152 280 159 280H165C172 280 175 194 181 194C187 194 189 280 196 280H202C209 280 211 260 217 260C223 260 224 280 231 280" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="10" />
+  <path d="M367 210C374 238 386 249 414 256C386 263 374 274 367 302C360 274 348 263 320 256C348 249 360 238 367 210Z" fill="none" stroke="#fff" stroke-linejoin="round" stroke-width="10" />
+</svg>
