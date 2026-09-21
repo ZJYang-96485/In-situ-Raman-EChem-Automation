@@ -23,6 +23,9 @@ jobs:
       name: github-pages
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
