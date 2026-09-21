@@ -5,228 +5,115 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="SpectraLoop setup console for adaptive operando Raman spectroscopy."
+      content="SpectraLoop is an adaptive operando Raman spectroscopy platform for closed-loop experimentation."
     />
-    <title>SpectraLoop — Adaptive Operando Raman Spectroscopy Platform</title>
+    <title>SpectraLoop — I-Corps Introduction</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="shell">
+    <main class="shell intro-shell">
       <header class="hero">
-        <div class="title-block">
-          <p class="eyebrow">CONFIGURATION CONSOLE · VERSION 0.1</p>
-          <h1>SpectraLoop</h1>
-          <p class="subtitle">Adaptive Operando Raman Spectroscopy Platform</p>
+        <div class="title-block intro-title-block">
+          <img class="brand-logo" src="assets/spectraloop-logo.png" alt="SpectraLoop logo" />
+          <p class="eyebrow">I-CORPS · CONCEPT INTRODUCTION</p>
+          <h1>Adaptive Operando Raman Spectroscopy Platform</h1>
+          <p class="subtitle">Closed-loop experimentation for spectroscopy and electrochemistry.</p>
         </div>
         <div class="header-actions">
-          <a class="site-link" href="introduction.html">I-Corps overview</a>
-          <div class="safe-status"><span class="status-dot"></span>Offline configuration · no hardware I/O</div>
+          <a class="site-link" href="setup.html">Experiment setup</a>
+          <div class="safe-status"><span class="status-dot amber"></span>Discovery workspace · no hardware I/O</div>
         </div>
       </header>
 
-      <section class="intro" aria-labelledby="setup-title">
-        <div>
-          <p class="eyebrow">EXPERIMENT SETUP</p>
-          <h2 id="setup-title">Configure the instrument, Raman workflow, and analysis workspace</h2>
+      <section class="intro-page" aria-labelledby="icorps-title">
+        <div class="under-construction" role="status">
+          <span class="status-dot amber"></span>
+          <div>
+            <strong>Under construction</strong>
+            <p>This I-Corps introduction captures working hypotheses only. Customer-discovery evidence and project decisions will be added here as they are validated.</p>
+          </div>
+        </div>
+
+        <section class="concept-hero" aria-labelledby="icorps-title">
+          <p class="eyebrow">THE CONCEPT</p>
+          <h2 id="icorps-title">Adaptive operando Raman, organized as a closed learning loop</h2>
           <p>
-            Define the potentiostat model, Raman acquisition and cleaning plan, then hand only
-            recorded preprocessed data to downstream analysis.
+            SpectraLoop is being developed to turn operando Raman from passive
+            characterization into closed-loop, adaptive experimentation.
           </p>
+          <ol class="adaptive-loop" aria-label="Measure, analyze, decide, and adapt feedback loop">
+            <li>Measure</li>
+            <li>Analyze</li>
+            <li>Decide</li>
+            <li>Adapt</li>
+          </ol>
+          <p class="loop-note">Each experiment informs the next planned measurement.</p>
+        </section>
+
+        <div class="concept-grid" aria-label="SpectraLoop concept overview">
+          <article class="concept-card">
+            <p class="eyebrow">WHAT WE DO</p>
+            <h3>Connect the experimental loop</h3>
+            <ul>
+              <li>Coordinate operando Raman and electrochemistry.</li>
+              <li>Preserve experimental and preprocessing provenance.</li>
+              <li>Prepare data for real-time analysis and ML-guided decisions.</li>
+              <li>Develop toward adaptive experimentation.</li>
+            </ul>
+          </article>
+          <article class="concept-card">
+            <p class="eyebrow">WHO IT IS FOR</p>
+            <h3>Teams working with complex measurements</h3>
+            <ul>
+              <li>Academic researchers.</li>
+              <li>Characterization facilities and national laboratories.</li>
+              <li>Instrument companies and industrial R&amp;D teams.</li>
+            </ul>
+          </article>
+          <article class="concept-card">
+            <p class="eyebrow">WHY IT MATTERS</p>
+            <h3>Shorten the path from spectrum to decision</h3>
+            <ul>
+              <li>Reduce manual handoffs between instruments and analysis.</li>
+              <li>Improve experimental traceability and reproducibility.</li>
+              <li>Support safety-gated automation as integrations mature.</li>
+            </ul>
+          </article>
         </div>
-        <div class="progress" aria-label="Three setup areas">
-          <span class="active">1</span><i></i><span>2</span><i></i><span>3</span>
-          <small>Instrument · Raman · Analysis</small>
-        </div>
+
+        <section class="project-status" aria-labelledby="status-title">
+          <div>
+            <p class="eyebrow">CURRENT SCAFFOLD</p>
+            <h3 id="status-title">What is available today</h3>
+          </div>
+          <ul>
+            <li>Model-profiled CHI 760-series experiment configuration.</li>
+            <li>Connection-safe Raman acquisition planning with preprocessing provenance.</li>
+            <li>A dedicated workspace boundary for downstream data analysis and machine learning.</li>
+          </ul>
+          <p>
+            The public interface is configuration-only. It does not connect to instruments,
+            control a laser, or initiate an experiment.
+          </p>
+        </section>
+
+        <section class="discovery-panel" aria-labelledby="discovery-title">
+          <p class="eyebrow">CUSTOMER-DISCOVERY QUESTIONS</p>
+          <h3 id="discovery-title">Questions to test before defining a product</h3>
+          <ul>
+            <li>Where do users lose time or confidence when coordinating electrochemistry and Raman measurements?</li>
+            <li>Which configuration, timing, and preprocessing records are essential for reproducible work?</li>
+            <li>How should a local, safety-gated instrument workflow fit with existing facility practices and software?</li>
+          </ul>
+        </section>
+
+        <a class="button primary public-setup-link" href="setup.html">View experiment setup</a>
       </section>
 
-      <nav class="section-tabs" aria-label="Setup sections">
-        <button class="tab active" data-target="instrument">01 <span>Instrument</span></button>
-        <button class="tab" data-target="raman">02 <span>Raman</span></button>
-        <button class="tab" data-target="analysis">03 <span>Analysis</span></button>
-        <button class="tab" data-target="review">04 <span>Review</span></button>
-      </nav>
-
-      <form id="setup-form" novalidate>
-        <section id="instrument" class="setup-section active" aria-labelledby="instrument-heading">
-          <div class="section-heading">
-            <div class="section-number">01</div>
-            <div>
-              <p class="eyebrow">POTENTIOSTAT</p>
-              <h2 id="instrument-heading">Choose the CHI 760-series profile</h2>
-            </div>
-          </div>
-          <div class="grid two-column">
-            <label class="field">
-              <span>Instrument model</span>
-              <select id="chi-model" name="chi-model">
-                <option value="760B">CHI 760B</option>
-                <option value="760C">CHI 760C</option>
-                <option value="760D">CHI 760D</option>
-                <option value="760E">CHI 760E</option>
-              </select>
-              <small>Changes the automation capability gate; it does not connect an instrument.</small>
-            </label>
-            <label class="field">
-              <span>Automation backend</span>
-              <select id="chi-backend" name="chi-backend">
-                <option value="mock">Mock / offline development</option>
-                <option value="vendor_pending">Vendor adapter — not configured</option>
-              </select>
-              <small>Live CHI automation remains unconfigured until the vendor interface is verified.</small>
-            </label>
-          </div>
-          <section class="capability-card" aria-live="polite">
-            <div>
-              <p class="eyebrow">PROFILE CAPABILITIES</p>
-              <h3 id="profile-title">CHI 760B automation surface</h3>
-            </div>
-            <ul id="chi-capabilities" class="capability-list"></ul>
-            <p id="profile-note" class="card-note"></p>
-          </section>
-        </section>
-
-        <section id="raman" class="setup-section" aria-labelledby="raman-heading" hidden>
-          <div class="section-heading">
-            <div class="section-number">02</div>
-            <div>
-              <p class="eyebrow">RAMAN SPECTROSCOPY</p>
-              <h2 id="raman-heading">Record the acquisition and preprocessing plan</h2>
-            </div>
-          </div>
-          <div class="hardware-summary">
-            <span class="status-dot amber"></span>
-            <p><strong>Provisional inventory:</strong> Andor detector CCD-15119, Andor spectrograph, and Ondax laser controller. Verify all bench identifiers before any live integration.</p>
-          </div>
-          <div class="grid three-column">
-            <label class="field">
-              <span>Raman backend</span>
-              <select id="raman-backend" name="raman-backend">
-                <option value="mock">Mock / offline development</option>
-                <option value="andor_solis">Andor/Solis adapter — disabled</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Exposure time (s)</span>
-              <input id="exposure" name="exposure" type="number" min="0.001" step="0.001" value="0.1" required />
-            </label>
-            <label class="field">
-              <span>Accumulations</span>
-              <input id="accumulations" name="accumulations" type="number" min="1" step="1" value="1" required />
-            </label>
-            <label class="field">
-              <span>Spectra per capture</span>
-              <input id="spectra-count" name="spectra-count" type="number" min="1" step="1" value="1" required />
-            </label>
-            <label class="field">
-              <span>Inter-spectrum delay (s)</span>
-              <input id="inter-delay" name="inter-delay" type="number" min="0" step="0.1" value="0" required />
-            </label>
-            <label class="field">
-              <span>Excitation wavelength (nm)</span>
-              <input id="excitation" name="excitation" type="number" min="1" step="0.1" placeholder="Verify before entering" />
-            </label>
-          </div>
-          <section class="processing-panel">
-            <div>
-              <p class="eyebrow">RAMAN-OWNED PREPROCESSING</p>
-              <h3>Diagnose and clean spectra before analysis</h3>
-              <p>Settings are saved with the Raman plan; the ML workspace never re-cleans raw spectra.</p>
-            </div>
-            <div class="grid two-column compact">
-              <label class="field">
-                <span>Despike threshold</span>
-                <input id="despike" name="despike" type="number" min="0.1" step="0.1" placeholder="Disabled" />
-                <small>Median-based; leave blank to disable.</small>
-              </label>
-              <label class="field">
-                <span>Smoothing window (odd points)</span>
-                <input id="smoothing" name="smoothing" type="number" min="1" step="2" value="1" required />
-              </label>
-              <label class="field">
-                <span>Baseline mode</span>
-                <select id="baseline" name="baseline">
-                  <option value="none">No baseline correction</option>
-                  <option value="edge_linear">Edge-linear baseline</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Normalization</span>
-                <select id="normalization" name="normalization">
-                  <option value="none">No normalization</option>
-                  <option value="max">Maximum intensity</option>
-                </select>
-              </label>
-            </div>
-          </section>
-          <aside class="safety-callout">
-            <strong>Laser and trigger safeguards remain locked.</strong>
-            This setup app does not enable the Ondax controller, internal-fire pulse, or external TTL triggering.
-          </aside>
-        </section>
-
-        <section id="analysis" class="setup-section" aria-labelledby="analysis-heading" hidden>
-          <div class="section-heading">
-            <div class="section-number">03</div>
-            <div>
-              <p class="eyebrow">MACHINE LEARNING PLATFORM</p>
-              <h2 id="analysis-heading">Define the downstream analysis workspace</h2>
-            </div>
-          </div>
-          <div class="grid two-column">
-            <label class="field">
-              <span>Analysis project name</span>
-              <input id="project-name" name="project-name" type="text" value="operando-raman-study" required />
-              <small>Used to group post-experimental datasets and models.</small>
-            </label>
-            <label class="field">
-              <span>Analysis task</span>
-              <select id="analysis-task" name="analysis-task">
-                <option value="exploratory">Exploratory / feature analysis</option>
-                <option value="regression">Regression</option>
-                <option value="classification">Classification</option>
-                <option value="anomaly_detection">Anomaly detection</option>
-              </select>
-            </label>
-            <label class="field" id="target-field" hidden>
-              <span>Target name</span>
-              <input id="target-name" name="target-name" type="text" placeholder="e.g., potential_V or phase_label" />
-            </label>
-            <label class="field">
-              <span>Validation fraction</span>
-              <input id="validation-fraction" name="validation-fraction" type="number" min="0.05" max="0.95" step="0.05" value="0.2" required />
-            </label>
-          </div>
-          <section class="data-contract">
-            <span class="contract-icon" aria-hidden="true">↳</span>
-            <div>
-              <h3>Analysis data contract</h3>
-              <p>Accept preprocessed Raman features with recorded preprocessing provenance and optional electrochemistry metadata. Diagnostics and noise cleaning stay in the Raman module.</p>
-            </div>
-          </section>
-        </section>
-
-        <section id="review" class="setup-section" aria-labelledby="review-heading" hidden>
-          <div class="section-heading">
-            <div class="section-number">04</div>
-            <div>
-              <p class="eyebrow">REVIEW &amp; EXPORT</p>
-              <h2 id="review-heading">Your SpectraLoop setup</h2>
-            </div>
-          </div>
-          <p class="review-copy">Export this configuration to keep model selection, Raman processing provenance, and downstream analysis choices together.</p>
-          <pre id="config-preview" class="config-preview" aria-label="Configuration preview"></pre>
-        </section>
-
-        <footer class="actions">
-          <p id="form-status" class="form-status" role="status" aria-live="polite">Offline configuration is ready to edit.</p>
-          <div>
-            <button class="button ghost" id="reset-button" type="button">Reset defaults</button>
-            <button class="button secondary" id="save-button" type="button">Save locally</button>
-            <button class="button primary" id="export-button" type="button">Export setup JSON</button>
-          </div>
-        </footer>
-      </form>
+      <footer class="page-footer">
+        <span>SpectraLoop I-Corps workspace</span>
+        <a href="setup.html">Open experiment setup →</a>
+      </footer>
     </main>
-    <script src="app.js"></script>
   </body>
 </html>

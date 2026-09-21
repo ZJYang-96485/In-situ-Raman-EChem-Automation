@@ -11,7 +11,11 @@ The deployed page keeps all hardware settings in the browser and does not make
 network calls to laboratory instruments. It is suitable for setup,
 documentation, and configuration export, but not live instrument control.
 
-SpectraLoop is the first user-facing setup console for this project. It is a
+`index.html` is the public I-Corps introduction and customer-discovery landing
+page. It is deliberately marked **under construction** and remains separate
+from the experiment console.
+
+`setup.html` is the first user-facing setup console for this project. It is a
 dependency-free static web app that configures three areas:
 
 1. a model-profiled CHI 760-series potentiostat;
@@ -22,9 +26,7 @@ It runs entirely in the browser and only saves/exports JSON configuration. It
 does not connect to hardware, control the laser, issue a trigger, or execute an
 experiment.
 
-`introduction.html` is a separate I-Corps introduction and customer-discovery
-page. It is deliberately marked **under construction** and is not part of the
-experiment setup console.
+`introduction.html` remains as a compatibility redirect to the landing page.
 
 Serve it locally from the repository root:
 
