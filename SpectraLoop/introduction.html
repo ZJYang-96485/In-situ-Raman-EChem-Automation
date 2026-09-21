@@ -13,8 +13,9 @@
   <body>
     <main class="shell intro-shell">
       <header class="hero">
-        <div class="title-block">
-          <p class="eyebrow">SPECTRALOOP · I-CORPS PROJECT INTRODUCTION</p>
+        <div class="title-block intro-title-block">
+          <img class="brand-wordmark" src="assets/spectraloop-wordmark.svg" alt="SpectraLoop" />
+          <p class="eyebrow">I-CORPS · CONCEPT INTRODUCTION</p>
           <h1>SpectraLoop</h1>
           <p class="subtitle">Adaptive Operando Raman Spectroscopy Platform</p>
         </div>
@@ -25,7 +26,6 @@
       </header>
 
       <section class="intro-page" aria-labelledby="icorps-title">
-        <p class="eyebrow">EARLY-STAGE PROJECT SUMMARY</p>
         <div class="under-construction" role="status">
           <span class="status-dot amber"></span>
           <div>
@@ -34,30 +34,68 @@
           </div>
         </div>
 
-        <h2 id="icorps-title">A reproducible workflow for operando Raman electrochemistry</h2>
-        <p class="lead-copy">
-          SpectraLoop is being developed to organize electrochemical configuration,
-          Raman-acquisition planning, Raman-owned preprocessing, and traceable
-          post-experimental analysis in one laboratory workflow.
-        </p>
+        <section class="concept-hero" aria-labelledby="icorps-title">
+          <p class="eyebrow">THE CONCEPT</p>
+          <h2 id="icorps-title">Adaptive operando Raman, organized as a closed learning loop</h2>
+          <p>
+            SpectraLoop is being developed to turn operando Raman from passive
+            characterization into closed-loop, adaptive experimentation.
+          </p>
+          <ol class="adaptive-loop" aria-label="Measure, analyze, decide, and adapt feedback loop">
+            <li>Measure</li>
+            <li>Analyze</li>
+            <li>Decide</li>
+            <li>Adapt</li>
+          </ol>
+          <p class="loop-note">Each experiment informs the next planned measurement.</p>
+        </section>
 
-        <div class="intro-grid">
-          <article class="topic-card">
-            <p class="eyebrow">PROBLEM HYPOTHESIS</p>
-            <h3>Fragmented instrument workflows</h3>
-            <p>Operando studies can require separate control software, manual timing alignment, and disconnected data handoffs. The resulting workflow may make repeatability and interpretation harder than necessary.</p>
+        <div class="concept-grid" aria-label="SpectraLoop concept overview">
+          <article class="concept-card">
+            <p class="eyebrow">WHAT WE DO</p>
+            <h3>Connect the experimental loop</h3>
+            <ul>
+              <li>Coordinate operando Raman and electrochemistry.</li>
+              <li>Preserve experimental and preprocessing provenance.</li>
+              <li>Prepare data for real-time analysis and ML-guided decisions.</li>
+              <li>Develop toward adaptive experimentation.</li>
+            </ul>
           </article>
-          <article class="topic-card">
-            <p class="eyebrow">INITIAL USERS</p>
-            <h3>Researchers and shared facilities</h3>
-            <p>Discovery will examine the needs of electrochemistry researchers, Raman users, facility staff, and laboratory instrumentation leads. These groups are hypotheses, not validated market segments.</p>
+          <article class="concept-card">
+            <p class="eyebrow">WHO IT IS FOR</p>
+            <h3>Teams working with complex measurements</h3>
+            <ul>
+              <li>Academic researchers.</li>
+              <li>Characterization facilities and national laboratories.</li>
+              <li>Instrument companies and industrial R&amp;D teams.</li>
+            </ul>
           </article>
-          <article class="topic-card">
-            <p class="eyebrow">PROPOSED VALUE</p>
-            <h3>Traceable experimental context</h3>
-            <p>The intended platform records model-specific instrument settings, acquisition plans, preprocessing provenance, and analysis context so a dataset carries its experimental history forward.</p>
+          <article class="concept-card">
+            <p class="eyebrow">WHY IT MATTERS</p>
+            <h3>Shorten the path from spectrum to decision</h3>
+            <ul>
+              <li>Reduce manual handoffs between instruments and analysis.</li>
+              <li>Improve experimental traceability and reproducibility.</li>
+              <li>Support safety-gated automation as integrations mature.</li>
+            </ul>
           </article>
         </div>
+
+        <section class="project-status" aria-labelledby="status-title">
+          <div>
+            <p class="eyebrow">CURRENT SCAFFOLD</p>
+            <h3 id="status-title">What is available today</h3>
+          </div>
+          <ul>
+            <li>Model-profiled CHI 760-series experiment configuration.</li>
+            <li>Connection-safe Raman acquisition planning with preprocessing provenance.</li>
+            <li>A dedicated workspace boundary for downstream data analysis and machine learning.</li>
+          </ul>
+          <p>
+            The public interface is configuration-only. It does not connect to instruments,
+            control a laser, or initiate an experiment.
+          </p>
+        </section>
 
         <section class="discovery-panel" aria-labelledby="discovery-title">
           <p class="eyebrow">CUSTOMER-DISCOVERY QUESTIONS</p>
@@ -68,6 +106,8 @@
             <li>How should a local, safety-gated instrument workflow fit with existing facility practices and software?</li>
           </ul>
         </section>
+
+        <a class="button primary public-setup-link" href="index.html">View experiment setup</a>
       </section>
 
       <footer class="page-footer">

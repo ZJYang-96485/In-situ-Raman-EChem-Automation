@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 210" role="img" aria-labelledby="title desc">
+  <title id="title">SpectraLoop</title>
+  <desc id="desc">SpectraLoop wordmark with a spectroscopy and adaptive-experimentation infinity mark.</desc>
+  <defs>
+    <linearGradient id="loop" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#1478ff"/>
+      <stop offset="1" stop-color="#12d0b5"/>
+    </linearGradient>
+  </defs>
+  <rect width="720" height="210" rx="8" fill="#102e55"/>
+  <path d="M42 76C91 20 164 22 222 77C246 100 261 106 280 106C299 106 314 100 338 77C396 22 469 20 518 76C469 132 396 134 338 79C314 56 299 50 280 50C261 50 246 56 222 79C164 134 91 132 42 76Z" fill="none" stroke="url(#loop)" stroke-width="12"/>
+  <path d="M76 94H97L106 74L114 112L124 42L133 112L142 84L149 94H170" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+  <path d="M415 95C435 77 449 51 464 37C480 50 483 80 503 95C483 109 480 140 464 153C449 139 435 113 415 95Z" fill="none" stroke="#fff" stroke-linejoin="round" stroke-width="4"/>
+  <circle cx="280" cy="78" r="7" fill="#fff"/><circle cx="280" cy="126" r="7" fill="#fff"/><circle cx="316" cy="102" r="7" fill="#fff"/>
+  <path d="M286 82L309 98M286 122L309 106" stroke="#fff" stroke-width="4"/>
+  <text x="76" y="188" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="700">SpectraL</text>
+  <text x="340" y="188" fill="url(#loop)" font-family="Arial, Helvetica, sans-serif" font-size="62" font-weight="700">∞</text>
+  <text x="390" y="188" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="700">p</text>
+</svg>
