@@ -1,0 +1,2 @@
+# No Python packages are required for the connection-free Raman scaffold.
+# Do not add a live Andor SDK dependency until the physical integration is verified.

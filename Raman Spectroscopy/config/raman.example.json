@@ -1,0 +1,22 @@
+{
+  "backend": "mock",
+  "connection_enabled": false,
+  "hardware": {
+    "verified": false,
+    "detector": {
+      "manufacturer": "Andor",
+      "model": "DU420A-BEX2-DD",
+      "serial_number": "CCD-15119",
+      "software": "Solis for Spectroscopy"
+    },
+    "spectrograph": {
+      "manufacturer": "Andor",
+      "model": "SR-303i-A-SIL"
+    },
+    "laser_controller": {
+      "manufacturer": "Ondax",
+      "model": null
+    },
+    "excitation_wavelength_nm": null
+  }
+}
