@@ -2,7 +2,8 @@
 
 This project supports model-profiled CH Instruments CHI 760-series
 potentiostats, a connection-safe Raman acquisition scaffold, and a separate
-post-experimental Machine Learning Platform.
+post-experimental Machine Learning Platform that forms the data foundation for
+future safety-gated decision automation.
 
 ## License
 
@@ -61,10 +62,11 @@ a second cleaning pipeline.
 
 ## SpectraLoop app
 
-[`SpectraLoop`](SpectraLoop) is the user-friendly first setup app for the
-potentiostat, Raman plan, and ML workspace. It runs locally in a browser and
-exports configuration JSON only—no hardware, laser, or trigger action is
-available from the app.
+[`SpectraLoop`](SpectraLoop) is the user-friendly first setup app for a
+coordinated electrochemistry/Raman workflow and a future safety-gated
+decision-automation layer. It runs locally in a browser and exports
+configuration JSON only—no hardware, laser, trigger, or automated decision
+action is available from the app.
 
 ### GitHub Pages
 

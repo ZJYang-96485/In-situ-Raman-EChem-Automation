@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
   <title id="title">SpectraLoop</title>
-  <desc id="desc">A blue-to-cyan infinity mark with a Raman spectrum and spectral feature.</desc>
+  <desc id="desc">A blue-to-cyan infinity mark with a Raman spectrum and decision spark, representing linked spectroscopy and electrochemistry.</desc>
   <defs>
     <linearGradient id="loop" x1="74" x2="438" y1="256" y2="256" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#1876ff" />

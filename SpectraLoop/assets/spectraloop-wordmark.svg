@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 210" role="img" aria-labelledby="title desc">
   <title id="title">SpectraLoop</title>
-  <desc id="desc">SpectraLoop wordmark with a spectroscopy and adaptive-experimentation infinity mark.</desc>
+  <desc id="desc">SpectraLoop wordmark with an infinity mark representing linked spectroscopy, electrochemistry, and decision automation.</desc>
   <defs>
     <linearGradient id="loop" x1="0" x2="1" y1="0" y2="0">
       <stop offset="0" stop-color="#1478ff"/>

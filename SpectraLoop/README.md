@@ -1,4 +1,4 @@
-# SpectraLoop — Adaptive Operando Raman Spectroscopy Platform
+# SpectraLoop — Adaptive Operando Raman Electrochemistry and Decision Automation Platform
 
 ## GitHub Pages deployment
 
@@ -12,15 +12,17 @@ network calls to laboratory instruments. It is suitable for setup,
 documentation, and configuration export, but not live instrument control.
 
 `index.html` is the public I-Corps introduction and customer-discovery landing
-page. It is deliberately marked **under construction** and remains separate
-from the experiment console.
+page for coordinated electrochemistry, operando Raman, and future safety-gated
+decision automation. It is deliberately marked **under construction** and
+remains separate from the experiment console.
 
 `setup.html` is the first user-facing setup console for this project. It is a
 dependency-free static web app that configures three areas:
 
 1. a model-profiled CHI 760-series potentiostat;
 2. Raman acquisition and Raman-owned preprocessing; and
-3. a downstream Machine Learning Platform workspace.
+3. a downstream Machine Learning Platform workspace that is prepared for
+   electrochemistry-linked analysis and future decision automation.
 
 It runs entirely in the browser and only saves/exports JSON configuration. It
 does not connect to hardware, control the laser, issue a trigger, or execute an

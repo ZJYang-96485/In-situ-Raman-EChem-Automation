@@ -49,7 +49,7 @@ function buildConfiguration() {
   const supervised = ["regression", "classification"].includes(state.analysisTask);
   return {
     application: {
-      name: "SpectraLoop - Adaptive Operando Raman Spectroscopy Platform",
+      name: "SpectraLoop - Adaptive Operando Raman Electrochemistry and Decision Automation Platform",
       schema_version: "0.1",
       mode: "configuration_only",
       generated_at: new Date().toISOString(),
