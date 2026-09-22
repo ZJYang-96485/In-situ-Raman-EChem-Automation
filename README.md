@@ -4,6 +4,12 @@ This project supports model-profiled CH Instruments CHI 760-series
 potentiostats, a connection-safe Raman acquisition scaffold, and a separate
 post-experimental Machine Learning Platform.
 
+## License
+
+This project is [proprietary and protected — all rights reserved](LICENSE).
+No use, copying, modification, or distribution is permitted without prior
+written permission from the copyright holder.
+
 ## CHI 760-series potentiostat module
 
 The controller and parameter models live in
