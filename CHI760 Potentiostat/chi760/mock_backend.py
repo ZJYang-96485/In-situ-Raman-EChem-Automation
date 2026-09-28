@@ -54,6 +54,30 @@ class MockCHI760:
             "potential_V": [],
         }
 
+    def run_ca(self, **params):
+        return self._result("CA", params, time_s=[], current_A=[])
+
+    def run_swv(self, **params):
+        return self._result(
+            "SWV", params, potential_V=[], forward_current_A=[], reverse_current_A=[],
+            differential_current_A=[]
+        )
+
+    def run_impe(self, **params):
+        return self._result(
+            "IMPE", params, potential_V=[], z_real_ohm=[], z_imag_ohm=[]
+        )
+
+    def run_step(self, **params):
+        return self._result("STEP", params, time_s=[], current_A=[])
+
+    def run_istep(self, **params):
+        return self._result("ISTEP/CPCS", params, time_s=[], potential_V=[])
+
+    @staticmethod
+    def _result(technique, parameters, **series):
+        return {"technique": technique, "parameters": parameters, **series}
+
 
 class MockCHI760B(MockCHI760):
     """Compatibility name for tests configured specifically for a CHI 760B."""

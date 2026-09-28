@@ -23,6 +23,11 @@ class Technique(str, Enum):
     LSV = "LSV"
     EIS = "EIS"
     OCP = "OCP"
+    CA = "CA"
+    SWV = "SWV"
+    IMPE = "IMPE"
+    STEP = "STEP"
+    ISTEP = "ISTEP/CPCS"
 
 
 @dataclass(frozen=True)
@@ -68,7 +73,17 @@ PROFILES: dict[CHI760Model, CHI760Profile] = {
     CHI760Model.E: CHI760Profile(
         model=CHI760Model.E,
         supported_techniques=frozenset(
-            {Technique.CV, Technique.IT, Technique.EIS, Technique.OCP}
+            {
+                Technique.CV,
+                Technique.IT,
+                Technique.EIS,
+                Technique.OCP,
+                Technique.CA,
+                Technique.SWV,
+                Technique.IMPE,
+                Technique.STEP,
+                Technique.ISTEP,
+            }
         ),
     ),
 }

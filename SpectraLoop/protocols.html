@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Build CHI 760E electrochemistry and RDE protocols with synchronized Raman capture planning." />
+    <title>SpectraLoop — CHI 760E Protocol Builder</title>
+    <meta name="theme-color" content="#061b3b" />
+    <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
+    <link rel="stylesheet" href="styles.css?v=chi-protocols-1" />
+  </head>
+  <body>
+    <main class="shell wide-shell">
+      <header class="hero">
+        <div class="title-block">
+          <p class="eyebrow">CHI 760E · PROTOCOL STUDIO</p>
+          <h1>Electrochemistry protocol builder</h1>
+          <p class="subtitle">General CHI workflows first, with the earlier disk-only RDE automation retained as an option.</p>
+        </div>
+        <div class="header-actions">
+          <a class="site-link" href="setup.html">Setup</a>
+          <a class="site-link" href="monitor.html">Synchronized data</a>
+          <a class="site-link" href="smoke-test.html">Smoke test</a>
+          <div class="safe-status"><span class="status-dot"></span>Planning only · execution locked</div>
+        </div>
+      </header>
+
+      <section class="protocol-summary" aria-labelledby="protocol-title">
+        <div>
+          <p class="eyebrow">CUSTOMIZED WORKFLOW</p>
+          <h2 id="protocol-title">Compose, inspect, and export the full experiment sequence</h2>
+          <p>
+            Presets preserve the earlier RDE workflow structure. Each step is translated to a
+            CHI capability status. For the CV/CA family, the exported offline plan inserts requested
+            Ru validation, compensation application/readback, and cleanup actions; none can execute yet.
+          </p>
+        </div>
+        <div class="legend" aria-label="Capability status legend">
+          <span class="badge libec">760E libec</span>
+          <span class="badge derived">Derived</span>
+          <span class="badge desktop">Desktop only</span>
+          <span class="badge verify">Verify SDK</span>
+        </div>
+      </section>
+
+      <div class="protocol-layout">
+        <aside class="protocol-sidebar">
+          <section class="builder-panel">
+            <p class="eyebrow">STARTING POINT</p>
+            <label class="field">
+              <span>Protocol preset</span>
+              <select id="protocol-preset">
+                <option value="ocp-eis-cv">OCP → EIS → CV</option>
+                <option value="ca-forward-backward">OCP/EIS + forward/backward CA range</option>
+                <option value="orr-lsv">ORR OCP → LSV</option>
+                <option value="levich">Optional disk-only RDE · Levich continuous CA RPM sweep</option>
+                <option value="blank">Blank protocol</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Protocol name</span>
+              <input id="protocol-name" type="text" value="OCP-EIS-CV" />
+            </label>
+            <label class="field">
+              <span>Raman synchronization</span>
+              <select id="raman-sync">
+                <option value="after_equilibration">After each equilibration</option>
+                <option value="before_and_after_experiment">Before and after each experiment</option>
+                <option value="none">No Raman capture</option>
+              </select>
+            </label>
+          </section>
+
+          <section class="builder-panel ir-panel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">AUTOMATED PREPARATION</p>
+                <h3>iR compensation</h3>
+              </div>
+              <label class="toggle-label"><input id="ir-enabled" type="checkbox" checked /> Include in plan</label>
+            </div>
+            <div class="grid two-column compact">
+              <label class="field">
+                <span>Mode</span>
+                <select id="ir-mode">
+                  <option value="automatic">Automatic selection (verify SDK)</option>
+                  <option value="positive_feedback">Positive feedback (verify SDK)</option>
+                  <option value="current_interrupt">Current interrupt (verify SDK)</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Target compensation (%)</span>
+                <input id="ir-fraction" type="number" value="95" readonly />
+              </label>
+              <label class="field">
+                <span>Ru attempts per trial</span>
+                <input id="ir-retries" type="number" min="3" max="20" step="1" value="5" />
+              </label>
+              <label class="field">
+                <span>Repeatability (%)</span>
+                <input id="ir-repeatability" type="number" min="0.1" max="50" step="0.1" value="5" />
+              </label>
+              <label class="field">
+                <span>Compensation trials (fixed policy)</span>
+                <input id="ir-max-trials" type="number" min="10" max="10" step="1" value="10" readonly />
+              </label>
+            </div>
+            <label class="check-row">
+              <input id="ir-fallback" type="checkbox" checked />
+              <span>Continue uncompensated after a recorded non-critical Ru failure</span>
+            </label>
+            <details class="ir-advanced">
+              <summary>Ru/OCP preparation settings</summary>
+              <div class="grid two-column compact">
+                <label class="field"><span>OCP minimum (s)</span><input id="ir-ocp-min" type="number" min="0" step="0.1" value="5" /></label>
+                <label class="field"><span>OCP timeout (s)</span><input id="ir-ocp-timeout" type="number" min="0.1" step="0.1" value="30" /></label>
+                <label class="field"><span>OCP sample period (s)</span><input id="ir-ocp-sample" type="number" min="0.001" step="0.001" value="0.25" /></label>
+                <label class="field"><span>Stability window</span><input id="ir-ocp-window" type="number" min="2" step="1" value="5" /></label>
+                <label class="field"><span>Stability limit (mV)</span><input id="ir-ocp-limit" type="number" min="0.001" step="0.1" value="5" /></label>
+                <label class="field"><span>Absolute OCP limit (V)</span><input id="ir-ocp-abs" type="number" min="0.001" step="0.1" value="2.5" /></label>
+                <label class="field"><span>Ru frequency (Hz)</span><input id="ir-ru-frequency" type="number" min="0.001" step="1" value="100000" /></label>
+                <label class="field"><span>Ru AC amplitude (mV)</span><input id="ir-ru-amplitude" type="number" min="0.001" step="0.1" value="5" /></label>
+                <label class="field"><span>Ru settle time (s)</span><input id="ir-ru-settle" type="number" min="0" step="0.1" value="0.5" /></label>
+              </div>
+            </details>
+            <p class="micro-note">These are requested control strategies, not confirmed 760E capabilities. The live adapter must discover the installed SDK parameter IDs, confirm the available modes, and verify readback before enabling compensation.</p>
+            <p class="micro-note">Trials 1–9 stop when verified readback reaches 95%. At trial 10, accept that trial’s valid value even if it is below 95%; an invalid final value follows the failure policy. Live use still requires CHI 760E verification.</p>
+          </section>
+
+          <section class="builder-panel">
+            <p class="eyebrow">ADD A STEP</p>
+            <label class="field">
+              <span>Technique or action</span>
+              <select id="new-step-kind"></select>
+            </label>
+            <button id="add-step" class="button secondary full-button" type="button">Add step</button>
+          </section>
+        </aside>
+
+        <section class="protocol-workspace" aria-label="Protocol steps">
+          <div class="workspace-heading">
+            <div>
+              <p class="eyebrow">SEQUENCE</p>
+              <h2>Protocol steps</h2>
+            </div>
+            <span id="step-count" class="count-chip">0 steps</span>
+          </div>
+          <div id="protocol-warnings" class="protocol-warnings" role="status" aria-live="polite"></div>
+          <div id="step-list" class="step-list"></div>
+        </section>
+      </div>
+
+      <section class="export-panel" aria-labelledby="export-title">
+        <div class="workspace-heading">
+          <div>
+            <p class="eyebrow">REVIEW</p>
+            <h2 id="export-title">CHI protocol plan</h2>
+          </div>
+          <div class="button-row">
+            <button id="load-protocol" class="button ghost" type="button">Load saved</button>
+            <button id="save-protocol" class="button ghost" type="button">Save locally</button>
+            <button id="export-protocol" class="button primary" type="button">Export JSON</button>
+          </div>
+        </div>
+        <pre id="protocol-preview" class="config-preview protocol-preview" aria-label="Protocol JSON preview"></pre>
+      </section>
+
+      <footer class="page-footer">
+        <span>Reference workflow: ZJYang-96485/RDE · target platform: CHI 760E</span>
+        <a href="smoke-test.html">Run the offline smoke test →</a>
+      </footer>
+    </main>
+    <script src="protocols.js"></script>
+  </body>
+</html>

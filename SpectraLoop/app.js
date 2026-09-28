@@ -1,13 +1,18 @@
 const capabilityProfiles = {
-  "760B": ["CV", "i-t"],
-  "760C": ["CV", "i-t", "EIS"],
-  "760D": ["CV", "i-t", "LSV", "EIS", "OCP"],
-  "760E": ["CV", "i-t", "EIS", "OCP"],
+  "760B": { direct: ["CV", "i-t"] },
+  "760C": { direct: ["CV", "i-t", "EIS"] },
+  "760D": { direct: ["CV", "i-t", "LSV", "EIS", "OCP"] },
+  "760E": {
+    direct: ["CV", "i-t", "CA", "SWV", "EIS", "IMPE", "OCP", "STEP", "ISTEP/CPCS"],
+    derived: ["Chronocoulometry (CC) = ∫I dt from CA"],
+    desktop: ["LSV"],
+    verify: ["GEIS", "iR compensation"],
+  },
 };
 
-const allTechniques = ["CV", "i-t", "LSV", "EIS", "OCP"];
+const allTechniques = ["CV", "i-t", "CA", "SWV", "EIS", "IMPE", "OCP", "STEP", "ISTEP/CPCS", "Chronocoulometry (CC) = ∫I dt from CA", "LSV", "GEIS", "iR compensation"];
 const defaultFormState = {
-  chiModel: "760B",
+  chiModel: "760E",
   chiBackend: "mock",
   ramanBackend: "mock",
   exposure: "0.1",
@@ -59,7 +64,8 @@ function buildConfiguration() {
       model: state.chiModel,
       backend: state.chiBackend,
       connection_enabled: false,
-      supported_automation_techniques: capabilityProfiles[state.chiModel],
+      automation_capabilities: capabilityProfiles[state.chiModel],
+      live_capabilities_verified: false,
     },
     raman: {
       backend: state.ramanBackend,
@@ -116,13 +122,19 @@ function validate() {
 
 function refreshCapabilities() {
   const model = document.querySelector("#chi-model").value;
-  const available = capabilityProfiles[model];
+  const profile = capabilityProfiles[model];
+  const statusFor = (technique) => Object.entries(profile).find(([, techniques]) => techniques.includes(technique))?.[0] || null;
+  const labelFor = (status) => ({ direct: "documented libec", derived: "derived", desktop: "desktop only", verify: "verify SDK" }[status]);
+  const iconFor = (status) => ({ direct: "✓", derived: "ƒ", desktop: "↗", verify: "?" }[status] || "—");
   document.querySelector("#profile-title").textContent = `CHI ${model} automation surface`;
   document.querySelector("#chi-capabilities").innerHTML = allTechniques
-    .map((technique) => `<li class="${available.includes(technique) ? "available" : ""}">${available.includes(technique) ? "✓" : "—"} ${technique}</li>`)
+    .map((technique) => {
+      const status = statusFor(technique);
+      return `<li class="${status || "unavailable"}">${iconFor(status)} ${technique}${status ? ` · ${labelFor(status)}` : ""}</li>`;
+    })
     .join("");
   document.querySelector("#profile-note").textContent =
-    "Capabilities are model-profile gates for the project’s documented automation surface. They are not a live connection check or a complete hardware specification.";
+    "Documented libec entries come from the public model matrix. Derived, desktop-only, and verify-SDK entries are intentionally separate. None is a live connection check.";
 }
 
 function refreshTaskFields() {

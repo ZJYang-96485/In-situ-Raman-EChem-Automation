@@ -1,7 +1,7 @@
 # In-situ Raman Electrochemistry Automation
 
 This project supports model-profiled CH Instruments CHI 760-series
-potentiostats, a connection-safe Raman acquisition scaffold, and a separate
+potentiostats with a current focus on the 760E, a connection-safe Raman acquisition scaffold, and a separate
 post-experimental Machine Learning Platform that forms the data foundation for
 future safety-gated decision automation.
 
@@ -20,13 +20,18 @@ an instrument. Select `760B`, `760C`, `760D`, or `760E` when creating
 `CHI760Controller`; each profile gates the techniques that this project exposes.
 This repository does not yet include a live hardware driver.
 
-The public surface includes CV, amperometric i-t, LSV, EIS, and OCP only when
-the selected model profile allows them. The project profiles follow the
+For the 760E, the offline surface includes the techniques listed in the public
+libec model matrix: CV, i-t, CA, SWV, IMP/EIS, IMPE, OCPT/OCP, STEP, and
+ISTEP/CPCS. Chronocoulometry (CC) is calculated from a CA current trace as
+charge in coulombs; it is not claimed as a separate libec technique. LSV is
+marked desktop-only for 760E, and GEIS requires installed-SDK verification.
+The project profiles follow the
 [vendor's 7xx libec automation matrix](https://www.chinstruments.com/software/libec/libec.shtml);
 this is an automation-interface constraint, not a claim about every capability
 of the physical instrument or its desktop software.
 
-A production backend must be implemented and validated against the
+A production backend, including the exact automatic iR-compensation parameter
+mapping and readback, must be implemented and validated against the
 vendor-supported CHI 760 interface before it is used with hardware. It must
 be validated separately for every selected model profile.
 
@@ -35,7 +40,7 @@ Example:
 ```python
 from chi760 import CHI760Controller, MockCHI760
 
-potentiostat = CHI760Controller(MockCHI760(), model="760B")
+potentiostat = CHI760Controller(MockCHI760(), model="760E")
 potentiostat.connect()
 ```
 
@@ -65,8 +70,12 @@ a second cleaning pipeline.
 [`SpectraLoop`](SpectraLoop) is the user-friendly first setup app for a
 coordinated electrochemistry/Raman workflow and a future safety-gated
 decision-automation layer. It runs locally in a browser and exports
-configuration JSON only—no hardware, laser, trigger, or automated decision
-action is available from the app.
+configuration/protocol JSON only. It now includes a CHI 760E protocol studio
+adapted from the earlier RDE repository, optional disk-only RDE planning, and a
+simulated synchronized data screen. A browser smoke-test page exercises the
+offline protocol, iR, cleanup, integration, and synchronization logic while
+recording zero hardware calls. No hardware, laser, trigger, iR action, or automated decision action is
+available from the app.
 
 ### GitHub Pages
 

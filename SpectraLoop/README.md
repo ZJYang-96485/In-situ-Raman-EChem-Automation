@@ -1,39 +1,53 @@
-# SpectraLoop — Adaptive Operando Raman Electrochemistry and Decision Automation Platform
+# SpectraLoop
 
-## GitHub Pages deployment
+SpectraLoop is a dependency-free static interface for planning coordinated CHI
+760E and operando Raman experiments, with disk-only RDE available as an option. Every current page is offline: it can
+save or export JSON but cannot contact instruments.
 
-This static application is deployed from the `SpectraLoop/` directory by the
-repository's **Deploy SpectraLoop to GitHub Pages** workflow. On GitHub, enable
-**Settings → Pages → Build and deployment → Source: GitHub Actions**, then push
-to `main` (or run the workflow manually).
+## Pages
 
-The deployed page keeps all hardware settings in the browser and does not make
-network calls to laboratory instruments. It is suitable for setup,
-documentation, and configuration export, but not live instrument control.
+- `index.html` — public concept and I-Corps introduction.
+- `setup.html` — model-profiled instrument, Raman, and analysis configuration.
+- `protocols.html` — editable CHI 760E protocol builder adapted from the
+  [`ZJYang-96485/RDE`](https://github.com/ZJYang-96485/RDE) workflow.
+- `monitor.html` — simulated synchronized electrochemistry/Raman screen with an
+  optional disk-only RDE overlay, one shared cursor, and preserved source timestamps.
+- `smoke-test.html` — one-click, connection-free acceptance checks for protocol
+  validation, iR trial behavior, failure cleanup, CC integration, synchronized
+  records, and optional disk-only RDE commands.
 
-`index.html` is the public I-Corps introduction and customer-discovery landing
-page for coordinated electrochemistry, operando Raman, and future safety-gated
-decision automation. It is deliberately marked **under construction** and
-remains separate from the experiment console.
+The protocol builder distinguishes documented public-libec mappings, derived
+calculations, desktop-only workflows, and installed-SDK verification items.
+Chronocoulometry (CC) is derived from CA by integrating current over time.
+Automatic iR preparation and cleanup appear in the exported plan. Trials 1–9
+target confirmed 95% compensation; the 10th trial's valid value is accepted if
+the target has not been reached. Execution remains locked until the installed
+760E SDK exposes verified parameters/modes and application readback passes on a
+test cell.
 
-`setup.html` is the first user-facing setup console for this project. It is a
-dependency-free static web app that configures three areas:
+The monitor uses generated data for interface development. “Synchronized” on
+that page means software alignment on a simulated shared elapsed-time axis; it
+does not claim measured device timing.
 
-1. a model-profiled CHI 760-series potentiostat;
-2. Raman acquisition and Raman-owned preprocessing; and
-3. a downstream Machine Learning Platform workspace that is prepared for
-   electrochemistry-linked analysis and future decision automation.
+The browser smoke test may validate the protocol saved by `protocols.html` or
+use its built-in all-techniques protocol. Every result is displayed separately,
+and the exported report always records simulation mode and zero hardware calls.
 
-It runs entirely in the browser and only saves/exports JSON configuration. It
-does not connect to hardware, control the laser, issue a trigger, or execute an
-experiment.
+See [the synchronized data contract](synchronized-data-contract.md) for the
+planned record fields and alignment rules.
 
-`introduction.html` remains as a compatibility redirect to the landing page.
+## Local use
 
-Serve it locally from the repository root:
+Serve from the repository root:
 
 ```sh
 python -m http.server 8000 --directory SpectraLoop
 ```
 
-Then open `http://localhost:8000` in a browser.
+Then open `http://localhost:8000`.
+
+## GitHub Pages
+
+The repository's **Deploy SpectraLoop to GitHub Pages** workflow publishes the
+`SpectraLoop/` directory after GitHub Pages is configured to use GitHub Actions.
+Publishing this static interface does not enable local laboratory hardware I/O.

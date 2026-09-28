@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Preview synchronized CHI 760E, RDE, and Raman data on one shared experiment timeline." />
+    <title>SpectraLoop — Synchronized Data Preview</title>
+    <meta name="theme-color" content="#061b3b" />
+    <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
+    <link rel="stylesheet" href="styles.css?v=chi-monitor-1" />
+  </head>
+  <body>
+    <main class="shell wide-shell">
+      <header class="hero">
+        <div class="title-block">
+          <p class="eyebrow">CHI 760E · SYNCHRONIZED DATA</p>
+          <h1>Electrochemistry–Raman timeline</h1>
+          <p class="subtitle">Inspect linked signals at one shared elapsed time and retain their original timestamps.</p>
+        </div>
+        <div class="header-actions">
+          <a class="site-link" href="protocols.html">Protocol studio</a>
+          <a class="site-link" href="setup.html">Setup</a>
+          <a class="site-link" href="smoke-test.html">Smoke test</a>
+          <div class="safe-status"><span class="status-dot amber"></span>Simulated session · no hardware I/O</div>
+        </div>
+      </header>
+
+      <section class="sync-banner" aria-labelledby="sync-title">
+        <div>
+          <p class="eyebrow">ALIGNMENT STATUS</p>
+          <h2 id="sync-title">Software-aligned preview</h2>
+          <p>
+            The shared cursor uses simulated host timestamps. Hardware trigger timing, clock offset,
+            and measured latency remain unverified until the CHI 760E and Raman instrument are connected.
+          </p>
+        </div>
+        <div class="sync-quality">
+          <span class="badge verify">Connection verification required</span>
+          <strong>Timing quality: simulated</strong>
+          <label class="toggle-label"><input id="rde-preview-enabled" type="checkbox" /> Show optional disk-only RDE demo</label>
+        </div>
+      </section>
+
+      <section class="metric-grid" aria-label="Values at the selected time">
+        <article class="metric-card"><span>Elapsed time</span><strong id="metric-time">0.0 s</strong><small>Shared cursor</small></article>
+        <article class="metric-card"><span>Working potential</span><strong id="metric-potential">—</strong><small>Simulated CHI sample</small></article>
+        <article class="metric-card"><span>Disk current</span><strong id="metric-current">—</strong><small>Simulated CHI sample</small></article>
+        <article class="metric-card"><span>CC from CA</span><strong id="metric-charge">—</strong><small>Derived ∫I dt</small></article>
+        <article class="metric-card"><span>RDE speed</span><strong id="metric-rpm">—</strong><small>Optional disk-only setpoint</small></article>
+        <article class="metric-card"><span>Raman frame</span><strong id="metric-frame">—</strong><small>Nearest simulated spectrum</small></article>
+        <article class="metric-card"><span>iR state</span><strong id="metric-ir">95% target</strong><small id="metric-ru">Trial 10 value is final</small></article>
+      </section>
+
+      <section class="timeline-panel" aria-labelledby="timeline-title">
+        <div class="workspace-heading">
+          <div>
+            <p class="eyebrow">SHARED TIME AXIS</p>
+            <h2 id="timeline-title">Electrochemistry and optional RDE</h2>
+          </div>
+          <span class="count-chip">Preview data</span>
+        </div>
+        <canvas id="timeline-canvas" class="data-canvas" width="1100" height="390" aria-label="Simulated potential, disk current, and optional RDE speed versus time"></canvas>
+        <div class="playback-controls">
+          <button id="play-toggle" class="button secondary" type="button">Play</button>
+          <input id="time-slider" type="range" min="0" max="120" step="0.1" value="0" aria-label="Selected elapsed time" />
+          <output id="time-output" for="time-slider">0.0 / 120.0 s</output>
+        </div>
+        <p class="micro-note">Click the plot or move the slider to update every panel. Values are generated locally for interface development.</p>
+      </section>
+
+      <div class="sync-layout">
+        <section class="spectrum-panel" aria-labelledby="spectrum-title">
+          <div class="workspace-heading">
+            <div>
+              <p class="eyebrow">NEAREST RAMAN ACQUISITION</p>
+              <h2 id="spectrum-title">Spectrum at <span id="spectrum-time">—</span></h2>
+            </div>
+            <span id="spectrum-offset" class="count-chip">Δt —</span>
+          </div>
+          <canvas id="spectrum-canvas" class="data-canvas spectrum-canvas" width="730" height="330" aria-label="Nearest simulated Raman spectrum"></canvas>
+          <p class="micro-note">Nearest-frame association is a visualization convenience. The export preserves both timestamps and the signed offset.</p>
+        </section>
+
+        <aside class="event-panel" aria-labelledby="event-title">
+          <div class="workspace-heading">
+            <div>
+              <p class="eyebrow">PROVENANCE</p>
+              <h2 id="event-title">Run events</h2>
+            </div>
+          </div>
+          <ol id="event-list" class="event-list"></ol>
+        </aside>
+      </div>
+
+      <section class="contract-panel" aria-labelledby="contract-title">
+        <div>
+          <p class="eyebrow">DATA CONTRACT</p>
+          <h2 id="contract-title">Keep raw clocks; derive the shared timeline</h2>
+          <p>Each record carries a session ID, source, source timestamp, host receipt timestamp, elapsed time, sequence number, and quality flags. Raman links add acquisition start/end/midpoint and electrochemistry offset.</p>
+        </div>
+        <button id="export-session" class="button primary" type="button">Export preview JSON</button>
+      </section>
+
+      <footer class="page-footer">
+        <span>Interface preview only · device synchronization is not yet measured</span>
+        <a href="smoke-test.html">Run the offline smoke test →</a>
+      </footer>
+    </main>
+    <script src="monitor.js"></script>
+  </body>
+</html>

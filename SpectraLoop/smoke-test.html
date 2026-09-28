@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Run connection-free CHI 760E protocol, iR, cleanup, and synchronized-data smoke tests in the browser." />
+    <title>SpectraLoop — CHI 760E Offline Smoke Test</title>
+    <meta name="theme-color" content="#061b3b" />
+    <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
+    <link rel="stylesheet" href="styles.css?v=chi-smoke-1" />
+  </head>
+  <body>
+    <main class="shell wide-shell">
+      <header class="hero">
+        <div class="title-block">
+          <p class="eyebrow">CHI 760E · OFFLINE ACCEPTANCE</p>
+          <h1>Browser smoke test</h1>
+          <p class="subtitle">Exercise protocol validation, iR trial logic, cleanup, CC, synchronization, and optional disk-only RDE without contacting hardware.</p>
+        </div>
+        <div class="header-actions">
+          <a class="site-link" href="protocols.html">Protocol studio</a>
+          <a class="site-link" href="monitor.html">Synchronized data</a>
+          <div class="safe-status"><span class="status-dot"></span>Simulation only · hardware calls 0</div>
+        </div>
+      </header>
+
+      <section id="smoke-status-panel" class="smoke-status-panel" aria-labelledby="smoke-status">
+        <div>
+          <p class="eyebrow">TEST STATUS</p>
+          <h2 id="smoke-status">Ready to run</h2>
+          <p id="smoke-source">No smoke test has run yet.</p>
+        </div>
+        <div class="smoke-controls">
+          <label class="check-row"><input id="use-saved-protocol" type="checkbox" checked /> Test the locally saved protocol when available</label>
+          <label class="check-row"><input id="smoke-rde" type="checkbox" /> Include optional disk-only RDE commands</label>
+          <div class="button-row">
+            <button id="reset-smoke" class="button ghost" type="button">Reset</button>
+            <button id="export-smoke" class="button secondary" type="button" disabled>Export report</button>
+            <button id="run-smoke" class="button primary" type="button">Run smoke test</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="smoke-metrics" aria-label="Smoke test summary">
+        <article class="metric-card"><span>Passed</span><strong id="smoke-passed">—</strong><small>Individual assertions</small></article>
+        <article class="metric-card"><span>Failed</span><strong id="smoke-failed">—</strong><small>Blocking issues</small></article>
+        <article class="metric-card"><span>Duration</span><strong id="smoke-duration">—</strong><small>Browser execution</small></article>
+        <article class="metric-card"><span>Hardware calls</span><strong id="smoke-hardware">0</strong><small>Must remain zero</small></article>
+      </section>
+
+      <section class="smoke-scope" aria-labelledby="smoke-scope-title">
+        <div>
+          <p class="eyebrow">WHAT THIS PROVES</p>
+          <h2 id="smoke-scope-title">Offline logic and failure visibility</h2>
+        </div>
+        <p>
+          Passing means the browser-side plan, simulation, and data-contract checks agree. It does not prove CHI SDK parameters,
+          device communication, electrical safety, compensation application, or timing accuracy on physical instruments.
+        </p>
+      </section>
+
+      <section class="smoke-workspace" aria-labelledby="smoke-results-title">
+        <div class="workspace-heading">
+          <div>
+            <p class="eyebrow">ASSERTIONS</p>
+            <h2 id="smoke-results-title">Smoke-test results</h2>
+          </div>
+          <span class="count-chip">Failures stay visible</span>
+        </div>
+        <div id="smoke-results" class="smoke-results" aria-live="polite"></div>
+      </section>
+
+      <footer class="page-footer">
+        <span>Connection-free acceptance test · no device state is read or changed</span>
+        <a href="protocols.html">Review the tested protocol →</a>
+      </footer>
+    </main>
+    <script src="protocols.js"></script>
+    <script src="monitor.js"></script>
+    <script src="smoke-test.js"></script>
+  </body>
+</html>

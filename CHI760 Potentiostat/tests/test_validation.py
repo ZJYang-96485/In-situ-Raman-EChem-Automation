@@ -20,6 +20,34 @@ class ParameterValidationTests(unittest.TestCase):
         ):
             ITParameters(potential=0.5, duration=1, sample_interval=2)
 
+    def test_legacy_parameter_models_reject_nonfinite_values(self):
+        with self.assertRaises(ValueError):
+            CVParameters(
+                initial_potential=0.0,
+                high_potential=float("nan"),
+                low_potential=-0.2,
+                scan_rate=0.05,
+            )
+
+    def test_cycle_count_cannot_be_boolean(self):
+        with self.assertRaises(ValueError):
+            CVParameters(
+                initial_potential=0.0,
+                high_potential=1.0,
+                low_potential=-0.2,
+                scan_rate=0.05,
+                cycles=True,
+            )
+
+    def test_cv_vertices_must_be_ordered(self):
+        with self.assertRaisesRegex(ValueError, "greater than"):
+            CVParameters(
+                initial_potential=0.0,
+                high_potential=-0.2,
+                low_potential=1.0,
+                scan_rate=0.05,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
