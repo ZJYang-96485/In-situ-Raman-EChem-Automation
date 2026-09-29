@@ -5,6 +5,12 @@ function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function simulatorCore() {
+  if (globalThis.SpectraLoopSimulatorCore) return globalThis.SpectraLoopSimulatorCore;
+  if (typeof require !== "undefined") return require("./simulator.js");
+  return null;
+}
+
 function normalizedFraction(raw) {
   if (raw === null || raw === undefined || typeof raw === "boolean") return null;
   const value = Number(raw);
@@ -197,6 +203,20 @@ function smokeCases() {
       },
     },
     {
+      id: "connection-free-execution",
+      group: "Safety boundary",
+      title: "Current protocol executes without device I/O",
+      run: (context) => {
+        const core = simulatorCore();
+        requireCondition(core, "connection-free simulator is unavailable");
+        const session = core.buildSimulationSession(context.protocol, { scenario: "standard", sessionId: "smoke-simulation" });
+        requireCondition(session.hardware_connected === false && session.hardware_calls === 0, "simulator crossed the hardware boundary");
+        requireCondition(session.electrochemistry.length > 0, "simulator produced no electrochemistry records");
+        requireCondition(session.electrochemistry.slice(1).every((record, index) => record.elapsed_s > session.electrochemistry[index].elapsed_s), "simulator timestamps are not strictly increasing");
+        return `${session.electrochemistry.length} current-protocol points generated; hardware calls: 0.`;
+      },
+    },
+    {
       id: "protocol-validation",
       group: "Protocol",
       title: "Protocol schema and required fields",
@@ -325,7 +345,27 @@ function runSmokeSuite(options = {}) {
   const startedAt = new Date();
   const timer = typeof performance !== "undefined" ? performance : { now: () => Date.now() };
   const startMs = timer.now();
-  const resolved = resolveProtocol(options);
+  let resolved;
+  if (options.protocolPlan) {
+    try {
+      globalThis.SpectraLoopProtocolCore.restoreSavedSteps(options.protocolPlan);
+      resolved = {
+        plan: options.protocolPlan,
+        source: "current_builder_protocol",
+        note: "Current protocol-builder values tested.",
+        load_error: null,
+      };
+    } catch (error) {
+      resolved = {
+        plan: null,
+        source: "current_builder_protocol",
+        note: "The current protocol-builder values could not be loaded safely.",
+        load_error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  } else {
+    resolved = resolveProtocol(options);
+  }
   const context = {
     execution_mode: "simulated",
     hardware_calls: 0,
@@ -412,12 +452,18 @@ function initializeSmokeTest() {
     document.querySelector("#smoke-status").textContent = "Running offline checks";
     setTimeout(() => {
       const useSaved = document.querySelector("#use-saved-protocol").checked;
+      const currentPlan = useSaved && globalThis.SpectraLoopProtocolCore?.buildValidatedPlan
+        ? globalThis.SpectraLoopProtocolCore.buildValidatedPlan()
+        : null;
       lastSmokeReport = runSmokeSuite({
         includeRde: document.querySelector("#smoke-rde").checked,
-        useSaved,
-        savedPlanRaw: useSaved ? localStorage.getItem("spectraloop-chi760e-protocol") : null,
+        protocolPlan: currentPlan,
+        useSaved: useSaved && !currentPlan,
+        savedPlanRaw: useSaved && !currentPlan ? localStorage.getItem("spectraloop-chi760e-protocol") : null,
       });
       renderReport(lastSmokeReport);
+      const details = document.querySelector("#smoke-details");
+      if (details && lastSmokeReport.status === "failed") details.open = true;
       runButton.disabled = false;
       runButton.textContent = "Run smoke test";
     }, 0);

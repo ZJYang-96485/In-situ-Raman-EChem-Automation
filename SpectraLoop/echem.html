@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Build CHI 760E protocols and inspect synchronized electrochemistry–Raman data in one interface." />
+    <title>SpectraLoop — Electrochemistry</title>
+    <meta name="theme-color" content="#061b3b" />
+    <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
+    <link rel="stylesheet" href="styles.css?v=echem-simulator-1" />
+  </head>
+  <body>
+    <main class="shell wide-shell">
+      <header class="hero compact-hero">
+        <div class="title-block">
+          <p class="eyebrow">CHI 760E · ELECTROCHEMISTRY</p>
+          <h1>Plan and inspect</h1>
+          <p class="subtitle">One workspace for the protocol and synchronized data.</p>
+        </div>
+        <div class="header-actions">
+          <a class="site-link" href="setup.html">Setup</a>
+          <a class="site-link" href="index.html">Project</a>
+          <div class="safe-status"><span class="status-dot"></span>Offline · no hardware I/O</div>
+        </div>
+      </header>
+
+      <nav class="echem-switch" role="tablist" aria-label="Electrochemistry workspace">
+        <button class="active" type="button" role="tab" aria-selected="true" aria-controls="protocol-view" data-view-target="protocol">Protocol Builder</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="data-view" data-view-target="data" tabindex="-1">Synchronized Data</button>
+      </nav>
+
+      <section id="protocol-view" role="tabpanel" data-echem-view="protocol">
+        <div class="compact-context">
+          <span><strong>CHI 760E plan</strong> · RDE optional</span>
+          <div class="legend" aria-label="Capability status legend">
+            <span class="badge libec">760E libec</span>
+            <span class="badge derived">Derived</span>
+            <span class="badge desktop">Desktop only</span>
+            <span class="badge verify">Verify SDK</span>
+          </div>
+        </div>
+
+        <div class="protocol-layout compact-protocol-layout">
+          <aside class="protocol-sidebar">
+            <section class="builder-panel">
+              <p class="eyebrow">PROTOCOL</p>
+              <label class="field">
+                <span>Preset</span>
+                <select id="protocol-preset">
+                  <option value="ocp-eis-cv">OCP → EIS → CV</option>
+                  <option value="ca-forward-backward">OCP/EIS + forward/backward CA</option>
+                  <option value="orr-lsv">ORR OCP → LSV</option>
+                  <option value="levich">Optional RDE · Levich CA sweep</option>
+                  <option value="blank">Blank</option>
+                </select>
+              </label>
+              <label class="field"><span>Name</span><input id="protocol-name" type="text" value="OCP-EIS-CV" /></label>
+              <label class="field">
+                <span>Raman timing</span>
+                <select id="raman-sync">
+                  <option value="after_equilibration">After equilibration</option>
+                  <option value="before_and_after_experiment">Before and after experiment</option>
+                  <option value="none">None</option>
+                </select>
+              </label>
+            </section>
+
+            <section class="builder-panel ir-panel compact-ir-panel">
+              <div class="panel-title-row">
+                <p class="eyebrow">iR COMPENSATION</p>
+                <label class="toggle-label"><input id="ir-enabled" type="checkbox" checked /> Include</label>
+              </div>
+              <div class="grid two-column compact">
+                <label class="field">
+                  <span>Mode</span>
+                  <select id="ir-mode">
+                    <option value="automatic">Automatic</option>
+                    <option value="positive_feedback">Positive feedback</option>
+                    <option value="current_interrupt">Current interrupt</option>
+                  </select>
+                </label>
+                <label class="field"><span>Target</span><input id="ir-fraction" type="text" value="95%" readonly /></label>
+                <label class="field"><span>Ru attempts</span><input id="ir-retries" type="number" min="3" max="20" step="1" value="5" /></label>
+                <label class="field"><span>Repeatability (%)</span><input id="ir-repeatability" type="number" min="0.1" max="50" step="0.1" value="5" /></label>
+                <label class="field"><span>Trial ceiling</span><input id="ir-max-trials" type="number" min="10" max="10" step="1" value="10" readonly /></label>
+              </div>
+              <label class="check-row"><input id="ir-fallback" type="checkbox" checked /><span>Continue uncompensated after non-critical Ru failure</span></label>
+              <details class="ir-advanced">
+                <summary>Advanced Ru/OCP settings</summary>
+                <div class="grid two-column compact">
+                  <label class="field"><span>OCP minimum (s)</span><input id="ir-ocp-min" type="number" min="0" step="0.1" value="5" /></label>
+                  <label class="field"><span>OCP timeout (s)</span><input id="ir-ocp-timeout" type="number" min="0.1" step="0.1" value="30" /></label>
+                  <label class="field"><span>OCP sample (s)</span><input id="ir-ocp-sample" type="number" min="0.001" step="0.001" value="0.25" /></label>
+                  <label class="field"><span>Stability window</span><input id="ir-ocp-window" type="number" min="2" step="1" value="5" /></label>
+                  <label class="field"><span>Stability limit (mV)</span><input id="ir-ocp-limit" type="number" min="0.001" step="0.1" value="5" /></label>
+                  <label class="field"><span>Absolute limit (V)</span><input id="ir-ocp-abs" type="number" min="0.001" step="0.1" value="2.5" /></label>
+                  <label class="field"><span>Ru frequency (Hz)</span><input id="ir-ru-frequency" type="number" min="0.001" step="1" value="100000" /></label>
+                  <label class="field"><span>AC amplitude (mV)</span><input id="ir-ru-amplitude" type="number" min="0.001" step="0.1" value="5" /></label>
+                  <label class="field"><span>Settle time (s)</span><input id="ir-ru-settle" type="number" min="0" step="0.1" value="0.5" /></label>
+                </div>
+              </details>
+              <p class="policy-line"><strong>Policy:</strong> CV/CA · stop at 95% · accept trial 10’s valid value · live application locked.</p>
+            </section>
+
+            <section class="builder-panel">
+              <p class="eyebrow">ADD STEP</p>
+              <label class="field"><span>Technique</span><select id="new-step-kind"></select></label>
+              <button id="add-step" class="button secondary full-button" type="button">Add step</button>
+            </section>
+          </aside>
+
+          <section class="protocol-workspace" aria-label="Protocol steps">
+            <div class="workspace-heading">
+              <div><p class="eyebrow">SEQUENCE</p><h2>Steps</h2></div>
+              <span id="step-count" class="count-chip">0 steps</span>
+            </div>
+            <div id="protocol-warnings" class="protocol-warnings" role="status" aria-live="polite"></div>
+            <div id="step-list" class="step-list"></div>
+          </section>
+        </div>
+
+        <section class="export-panel" aria-labelledby="export-title">
+          <div class="workspace-heading">
+            <div><p class="eyebrow">REVIEW</p><h2 id="export-title">Protocol plan</h2></div>
+            <div class="button-row">
+              <button id="load-protocol" class="button ghost" type="button">Load saved</button>
+              <button id="save-protocol" class="button ghost" type="button">Save</button>
+              <button id="export-protocol" class="button primary" type="button">Export JSON</button>
+            </div>
+          </div>
+          <details class="plan-details">
+            <summary>View protocol JSON</summary>
+            <pre id="protocol-preview" class="config-preview protocol-preview" aria-label="Protocol JSON preview"></pre>
+          </details>
+        </section>
+
+        <section class="simulation-runner" aria-labelledby="simulation-runner-title">
+          <div>
+            <p class="eyebrow">CONNECTION-FREE EXECUTION</p>
+            <h2 id="simulation-runner-title">Run the current protocol</h2>
+            <p id="simulation-builder-status" role="status" aria-live="polite">Deterministic CHI, Raman, iR, and optional RDE signals · 0 hardware calls.</p>
+          </div>
+          <div class="simulation-controls">
+            <label class="field compact-control">
+              <span>Scenario</span>
+              <select id="simulation-scenario">
+                <option value="standard">Standard · reaches 95%</option>
+                <option value="trial_10">iR · accept trial 10</option>
+                <option value="ru_failure">Fault · Ru unavailable</option>
+                <option value="acquisition_failure">Fault · acquisition stops</option>
+                <option value="cleanup_failure">Fault · cleanup fails</option>
+              </select>
+            </label>
+            <button id="run-simulation" class="button primary" type="button">Run simulation</button>
+          </div>
+        </section>
+
+        <section id="offline-checks" class="inline-smoke" aria-labelledby="smoke-status">
+          <div class="inline-smoke-heading">
+            <div><p class="eyebrow">OFFLINE CHECK</p><h2 id="smoke-status">Ready to run</h2><p id="smoke-source">Tests the current builder values without hardware.</p></div>
+            <div class="button-row">
+              <button id="reset-smoke" class="button ghost" type="button">Reset</button>
+              <button id="export-smoke" class="button secondary" type="button" disabled>Export report</button>
+              <button id="run-smoke" class="button primary" type="button">Run check</button>
+            </div>
+          </div>
+          <div id="smoke-status-panel" class="inline-smoke-status">
+            <input id="use-saved-protocol" type="checkbox" checked hidden />
+            <label class="check-row"><input id="smoke-rde" type="checkbox" /> Include optional RDE commands</label>
+            <div class="inline-smoke-metrics" aria-label="Offline check summary">
+              <span>Passed <strong id="smoke-passed">—</strong></span>
+              <span>Failed <strong id="smoke-failed">—</strong></span>
+              <span>Time <strong id="smoke-duration">—</strong></span>
+              <span>Hardware calls <strong id="smoke-hardware">0</strong></span>
+            </div>
+          </div>
+          <details id="smoke-details" class="smoke-details">
+            <summary>View individual checks</summary>
+            <div id="smoke-results" class="smoke-results" aria-live="polite"></div>
+          </details>
+        </section>
+      </section>
+
+      <section id="data-view" role="tabpanel" data-echem-view="data" hidden>
+        <div class="data-toolbar">
+          <div><strong id="simulation-session-title">Static preview</strong><span id="simulation-session-status">Software-aligned · timing unverified</span></div>
+          <div class="simulation-data-controls">
+            <span id="simulation-session-state" class="count-chip">Complete</span>
+            <label class="field inline-field"><span>Replay speed</span><select id="playback-speed"><option value="1">1×</option><option value="10" selected>10×</option><option value="50">50×</option><option value="200">200×</option></select></label>
+            <button id="replay-simulation" class="button ghost" type="button">Replay</button>
+          </div>
+        </div>
+
+        <section class="metric-grid" aria-label="Values at the selected time">
+          <article class="metric-card"><span>Time</span><strong id="metric-time">0.0 s</strong><small>Shared cursor</small></article>
+          <article class="metric-card"><span>Potential</span><strong id="metric-potential">—</strong><small>Simulated CHI</small></article>
+          <article class="metric-card"><span>Current</span><strong id="metric-current">—</strong><small>Simulated CHI</small></article>
+          <article class="metric-card"><span>CC from CA</span><strong id="metric-charge">—</strong><small>Derived ∫I dt</small></article>
+          <article class="metric-card"><span>RDE</span><strong id="metric-rpm">—</strong><small>Commanded only</small></article>
+          <article class="metric-card"><span>Raman</span><strong id="metric-frame">—</strong><small>Nearest frame</small></article>
+          <article class="metric-card"><span>iR</span><strong id="metric-ir">95% target</strong><small id="metric-ru">Trial 10 value is final</small></article>
+        </section>
+
+        <section class="timeline-panel" aria-labelledby="timeline-title">
+          <div class="workspace-heading"><div><p class="eyebrow">SHARED TIME AXIS</p><h2 id="timeline-title">Electrochemistry and optional RDE</h2></div><span class="count-chip">Simulated</span></div>
+          <canvas id="timeline-canvas" class="data-canvas" width="1100" height="390" aria-label="Simulated potential, current, and optional RDE speed versus time"></canvas>
+          <div class="playback-controls">
+            <button id="play-toggle" class="button secondary" type="button">Play</button>
+            <input id="time-slider" type="range" min="0" max="120" step="0.1" value="0" aria-label="Selected elapsed time" />
+            <output id="time-output" for="time-slider">0.0 / 120.0 s</output>
+          </div>
+        </section>
+
+        <div class="sync-layout">
+          <section class="spectrum-panel" aria-labelledby="spectrum-title">
+            <div class="workspace-heading"><div><p class="eyebrow">RAMAN</p><h2 id="spectrum-title">Spectrum at <span id="spectrum-time">—</span></h2></div><span id="spectrum-offset" class="count-chip">Δt —</span></div>
+            <canvas id="spectrum-canvas" class="data-canvas spectrum-canvas" width="730" height="330" aria-label="Nearest simulated Raman spectrum"></canvas>
+          </section>
+          <aside class="event-panel" aria-labelledby="event-title">
+            <div class="workspace-heading"><div><p class="eyebrow">EVENTS</p><h2 id="event-title">Run log</h2></div></div>
+            <ol id="event-list" class="event-list"></ol>
+          </aside>
+        </div>
+
+        <section class="contract-panel compact-contract">
+          <div><strong>Raw clocks preserved</strong><p>Nearest-frame links include signed offsets and never imply simultaneity.</p></div>
+          <button id="export-session" class="button primary" type="button">Export session JSON</button>
+        </section>
+      </section>
+
+      <footer class="page-footer">
+        <span>Planning and simulation only · live CHI control remains locked</span>
+        <a href="setup.html">Experiment setup →</a>
+      </footer>
+    </main>
+    <script src="protocols.js?v=echem-simulator-1"></script>
+    <script src="smoke-test.js?v=echem-simulator-1"></script>
+    <script src="simulator.js?v=echem-simulator-1"></script>
+    <script src="monitor.js?v=echem-simulator-1"></script>
+    <script src="echem.js?v=echem-simulator-1"></script>
+  </body>
+</html>

@@ -52,3 +52,11 @@ must each be recorded as methods rather than hidden transformations.
 
 Timing quality starts as `simulated_unverified`. A connected integration may
 upgrade that label only after latency, jitter, offset, and drift are measured.
+
+## Connection-free simulation
+
+Simulator sessions use `execution_mode: connection_free_simulation`,
+`hardware_connected: false`, and `hardware_calls: 0`. They retain the current
+protocol plan, every iR trial and repeated Ru value, explicit run and cleanup
+errors, raw simulated timestamps, and `simulation_only`/`no_hardware_io`
+markers. A simulated iR value is never represented as a hardware-applied value.

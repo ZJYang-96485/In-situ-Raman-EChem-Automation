@@ -8,13 +8,13 @@ save or export JSON but cannot contact instruments.
 
 - `index.html` — public concept and I-Corps introduction.
 - `setup.html` — model-profiled instrument, Raman, and analysis configuration.
-- `protocols.html` — editable CHI 760E protocol builder adapted from the
-  [`ZJYang-96485/RDE`](https://github.com/ZJYang-96485/RDE) workflow.
-- `monitor.html` — simulated synchronized electrochemistry/Raman screen with an
-  optional disk-only RDE overlay, one shared cursor, and preserved source timestamps.
-- `smoke-test.html` — one-click, connection-free acceptance checks for protocol
-  validation, iR trial behavior, failure cleanup, CC integration, synchronized
-  records, and optional disk-only RDE commands.
+- `echem.html` — the single electrochemistry workspace. Switch between the CHI
+  760E protocol builder and synchronized electrochemistry/Raman data without
+  leaving the page. The builder includes offline checks and a connection-free
+  protocol execution simulator.
+
+The older `protocols.html`, `monitor.html`, and `smoke-test.html` routes redirect
+to the corresponding view on `echem.html`.
 
 The protocol builder distinguishes documented public-libec mappings, derived
 calculations, desktop-only workflows, and installed-SDK verification items.
@@ -25,13 +25,19 @@ the target has not been reached. Execution remains locked until the installed
 760E SDK exposes verified parameters/modes and application readback passes on a
 test cell.
 
-The monitor uses generated data for interface development. “Synchronized” on
-that page means software alignment on a simulated shared elapsed-time axis; it
-does not claim measured device timing.
+The execution simulator uses the current protocol rather than a fixed example.
+It generates deterministic technique-specific CHI data, simulated Raman
+frames, explicit iR trials, derived CC, and commanded-only RDE values. Standard,
+trial-10, Ru-failure, acquisition-failure, and cleanup-failure scenarios remain
+entirely in the browser and always report zero hardware calls.
 
-The browser smoke test may validate the protocol saved by `protocols.html` or
-use its built-in all-techniques protocol. Every result is displayed separately,
-and the exported report always records simulation mode and zero hardware calls.
+The synchronized-data view uses those generated records for interface
+development. “Synchronized” means software alignment on a simulated shared
+elapsed-time axis; it does not claim measured device timing.
+
+The compact offline check validates the current builder values. Every result is
+available on demand, and the exported report always records simulation mode and
+zero hardware calls.
 
 See [the synchronized data contract](synchronized-data-contract.md) for the
 planned record fields and alignment rules.

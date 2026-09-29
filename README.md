@@ -70,12 +70,13 @@ a second cleaning pipeline.
 [`SpectraLoop`](SpectraLoop) is the user-friendly first setup app for a
 coordinated electrochemistry/Raman workflow and a future safety-gated
 decision-automation layer. It runs locally in a browser and exports
-configuration/protocol JSON only. It now includes a CHI 760E protocol studio
-adapted from the earlier RDE repository, optional disk-only RDE planning, and a
-simulated synchronized data screen. A browser smoke-test page exercises the
-offline protocol, iR, cleanup, integration, and synchronization logic while
-recording zero hardware calls. No hardware, laser, trigger, iR action, or automated decision action is
-available from the app.
+configuration, protocol, check-report, and simulated-session JSON. Its single electrochemistry page switches
+between a CHI 760E protocol builder and synchronized data, with optional
+disk-only RDE planning, a compact offline check, and a connection-free
+execution simulator driven by the current protocol. The simulator generates
+deterministic synchronized data and explicit fault states with zero hardware
+calls. No hardware, laser, trigger, physical iR action, or automated decision
+action is available from the app.
 
 ### GitHub Pages
 

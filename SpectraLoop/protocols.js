@@ -360,10 +360,6 @@ function validatePlan(plan) {
     warnings.push("At least one step requires installed-SDK parameter verification.");
   }
   const ir = plan.ir_compensation;
-  if (ir.enabled) {
-    warnings.push("iR compensation remains locked until parameter discovery, application, and readback pass on the installed 760E SDK.");
-    warnings.push("iR starting defaults are user-confirmed; live use still requires chemistry review and CHI verification.");
-  }
   if (ir.target_compensation_fraction !== 0.95) errors.push("iR target compensation must remain fixed at 95%.");
   if (ir.max_compensation_trials !== 10) errors.push("The compensation trial ceiling must remain fixed at 10.");
   if (!Number.isInteger(ir.ru_retry_count) || ir.ru_retry_count < 3 || ir.ru_retry_count > 20) errors.push("Ru attempts per trial must be an integer from 3 to 20.");
@@ -613,7 +609,7 @@ function initializeProtocolBuilder() {
   loadPreset("ocp-eis-cv");
 }
 
-const protocolCore = { finiteNumber, restoreSavedSteps, stepDefinitions, validatePlan };
+const protocolCore = { buildValidatedPlan, finiteNumber, restoreSavedSteps, stepDefinitions, validatePlan };
 
 if (typeof globalThis !== "undefined") globalThis.SpectraLoopProtocolCore = protocolCore;
 
