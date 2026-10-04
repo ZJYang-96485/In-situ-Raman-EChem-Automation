@@ -154,22 +154,10 @@ function nearestByTime(records, timeKey, targetS) {
   return records.reduce((best, record) => Math.abs(record[timeKey] - targetS) < Math.abs(best[timeKey] - targetS) ? record : best);
 }
 
-function formatCurrent(currentA) {
-  if (!Number.isFinite(currentA)) return "—";
-  const valueMa = currentA * 1000;
-  return `${valueMa >= 0 ? "+" : ""}${valueMa.toFixed(3)} mA`;
-}
-
 function formatElapsed(timeS) {
   if (timeS >= 3600) return `${(timeS / 3600).toFixed(1)} h`;
   if (timeS >= 600) return `${(timeS / 60).toFixed(1)} min`;
   return `${timeS.toFixed(timeS < 10 ? 1 : 0)} s`;
-}
-
-function escapeMonitorHtml(value) {
-  return String(value).replace(/[&<>'"]/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
-  }[character]));
 }
 
 function canvasPoint(event, canvas) {
@@ -229,7 +217,7 @@ function extentFor(key, fallback) {
     maximum = Math.max(maximum, value);
   });
   if (minimum === maximum) {
-    const padding = Math.max(Math.abs(minimum) * 0.1, key === "rde_commanded_rpm" ? 100 : 0.01);
+    const padding = Math.max(Math.abs(minimum) * 0.1, 0.01);
     minimum -= padding;
     maximum += padding;
   } else {
@@ -237,7 +225,6 @@ function extentFor(key, fallback) {
     minimum -= padding;
     maximum += padding;
   }
-  if (key === "rde_commanded_rpm") minimum = Math.min(0, minimum);
   return [minimum, maximum];
 }
 
@@ -246,13 +233,11 @@ function drawTimeline() {
   const context = clearCanvas(canvas);
   const potentialExtent = extentFor("potential_v", [-0.1, 0.2]);
   const currentExtent = extentFor("current_a", [-0.0002, 0.0002]);
-  const rpmExtent = extentFor("rde_commanded_rpm", [0, 100]);
   const panels = [
-    { top: 22, bottom: 112, key: "potential_v", min: potentialExtent[0], max: potentialExtent[1], color: "#275f88", label: "Ewe (V)" },
-    { top: 137, bottom: 227, key: "current_a", min: currentExtent[0], max: currentExtent[1], color: "#d65e24", label: "Disk I (A)" },
-    { top: 252, bottom: 342, key: "rde_commanded_rpm", min: rpmExtent[0], max: rpmExtent[1], color: "#20735d", label: "RPM" },
+    { top: 22, bottom: 142, key: "potential_v", min: potentialExtent[0], max: potentialExtent[1], color: "#275f88", label: "Potential (V)" },
+    { top: 172, bottom: 292, key: "current_a", min: currentExtent[0], max: currentExtent[1], color: "#d65e24", label: "Current (A)" },
   ];
-  const left = 78;
+  const left = 72;
   const right = canvas.width - 24;
   const safeDuration = Math.max(durationS, 0.001);
   panels.forEach((panel) => {
@@ -262,7 +247,7 @@ function drawTimeline() {
       bounds,
       [0, 0.25, 0.5, 0.75, 1].map((fraction) => ({ value: formatElapsed(durationS * fraction), x: left + fraction * (right - left) })),
       [panel.min, (panel.min + panel.max) / 2, panel.max].map((value) => ({
-        value: panel.key === "rde_commanded_rpm" ? Math.round(value) : Number(value).toPrecision(2),
+        value: Number(value).toPrecision(2),
         y: panel.bottom - ((value - panel.min) / (panel.max - panel.min)) * (panel.bottom - panel.top),
       })),
       panel === panels[panels.length - 1] ? "Elapsed time" : "",
@@ -328,56 +313,16 @@ function drawSpectrum(frame) {
   context.stroke();
 }
 
-function renderEvents() {
-  const eventList = document.querySelector("#event-list");
-  eventList.innerHTML = currentEvents.map((event) => {
-    const state = event.elapsed_s <= selectedTimeS ? "past" : "future";
-    return `<li class="${state}"><button type="button" data-time="${event.elapsed_s}"><time>${formatElapsed(event.elapsed_s)}</time><strong>${escapeMonitorHtml(event.label)}</strong><span>${escapeMonitorHtml(event.detail)}</span></button></li>`;
-  }).join("");
-}
-
-function updateIRMetric(sample) {
-  const metric = document.querySelector("#metric-ir");
-  const detail = document.querySelector("#metric-ru");
-  const ir = sample?.ir_compensation;
-  if (!ir?.requested) {
-    metric.textContent = "Not requested";
-    detail.textContent = "Current step is not iR eligible";
-    return;
-  }
-  if (ir.state === "withheld") {
-    metric.textContent = "95% target · withheld";
-    detail.textContent = "Static preview only";
-    return;
-  }
-  if (ir.accepted_trial) {
-    metric.textContent = `${(ir.accepted_fraction * 100).toFixed(0)}% · simulated`;
-    detail.textContent = `Trial ${ir.accepted_trial} · Ru ${ir.selected_ru_ohm?.toFixed(2) ?? "—"} Ω`;
-    return;
-  }
-  metric.textContent = "Uncompensated";
-  detail.textContent = "Simulated Ru preparation failed";
-}
-
 function updateSelection(timeS) {
   selectedTimeS = Math.max(0, Math.min(durationS, Number.isFinite(timeS) ? timeS : 0));
-  const sample = nearestByTime(echem, "elapsed_s", selectedTimeS);
   const frame = nearestByTime(currentRaman, "acquisition_midpoint_elapsed_s", selectedTimeS);
   const offsetS = frame ? frame.acquisition_midpoint_elapsed_s - selectedTimeS : null;
   document.querySelector("#time-slider").value = selectedTimeS;
   document.querySelector("#time-output").textContent = `${formatElapsed(selectedTimeS)} / ${formatElapsed(durationS)}`;
-  document.querySelector("#metric-time").textContent = formatElapsed(selectedTimeS);
-  document.querySelector("#metric-potential").textContent = Number.isFinite(sample?.potential_v) ? `${sample.potential_v.toFixed(3)} V` : "—";
-  document.querySelector("#metric-current").textContent = formatCurrent(sample?.current_a);
-  document.querySelector("#metric-charge").textContent = Number.isFinite(sample?.chronocoulometry_c) ? `${(sample.chronocoulometry_c * 1000).toFixed(3)} mC` : "—";
-  document.querySelector("#metric-rpm").textContent = sample?.rde_commanded_rpm ? `${sample.rde_commanded_rpm} rpm` : "Off";
-  document.querySelector("#metric-frame").textContent = frame?.frame_id || "None";
-  updateIRMetric(sample);
   document.querySelector("#spectrum-time").textContent = frame ? formatElapsed(frame.acquisition_midpoint_elapsed_s) : "—";
   document.querySelector("#spectrum-offset").textContent = frame ? `Δt ${offsetS >= 0 ? "+" : ""}${offsetS.toFixed(1)} s` : "No frame";
   drawTimeline();
   drawSpectrum(frame);
-  renderEvents();
 }
 
 function setPlaying(nextPlaying) {
@@ -464,7 +409,7 @@ function renderSessionMeta() {
   state.textContent = currentSession.terminal_state === "simulated_complete" ? "Complete" : "Failure visible";
   state.classList.toggle("failed", currentSession.terminal_state !== "simulated_complete");
   state.classList.remove("stale");
-  document.querySelector("#timeline-title").textContent = `${protocolName} · shared time axis`;
+  document.querySelector("#timeline-title").textContent = `${protocolName} · electrochemistry`;
 }
 
 function loadSimulationSession(session, options = {}) {
@@ -496,13 +441,9 @@ function initializeMonitor() {
   document.querySelector("#timeline-canvas").addEventListener("click", (event) => {
     const canvas = event.currentTarget;
     const point = canvasPoint(event, canvas);
-    const left = 78;
+    const left = 72;
     const right = canvas.width - 24;
     updateSelection(((point.x - left) / (right - left)) * durationS);
-  });
-  document.querySelector("#event-list").addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-time]");
-    if (button) updateSelection(Number(button.dataset.time));
   });
   document.querySelector("#export-session").addEventListener("click", exportSession);
   document.querySelector("#playback-speed").addEventListener("change", (event) => { playbackRate = Number(event.target.value); });

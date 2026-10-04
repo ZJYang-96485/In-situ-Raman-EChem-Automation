@@ -7,7 +7,7 @@
     <title>SpectraLoop — Electrochemistry</title>
     <meta name="theme-color" content="#061b3b" />
     <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
-    <link rel="stylesheet" href="styles.css?v=echem-simulator-1" />
+    <link rel="stylesheet" href="styles.css?v=echem-sync-2" />
   </head>
   <body>
     <main class="shell wide-shell">
@@ -188,44 +188,26 @@
             <span id="simulation-session-state" class="count-chip">Complete</span>
             <label class="field inline-field"><span>Replay speed</span><select id="playback-speed"><option value="1">1×</option><option value="10" selected>10×</option><option value="50">50×</option><option value="200">200×</option></select></label>
             <button id="replay-simulation" class="button ghost" type="button">Replay</button>
+            <button id="export-session" class="button primary" type="button">Export JSON</button>
           </div>
         </div>
 
-        <section class="metric-grid" aria-label="Values at the selected time">
-          <article class="metric-card"><span>Time</span><strong id="metric-time">0.0 s</strong><small>Shared cursor</small></article>
-          <article class="metric-card"><span>Potential</span><strong id="metric-potential">—</strong><small>Simulated CHI</small></article>
-          <article class="metric-card"><span>Current</span><strong id="metric-current">—</strong><small>Simulated CHI</small></article>
-          <article class="metric-card"><span>CC from CA</span><strong id="metric-charge">—</strong><small>Derived ∫I dt</small></article>
-          <article class="metric-card"><span>RDE</span><strong id="metric-rpm">—</strong><small>Commanded only</small></article>
-          <article class="metric-card"><span>Raman</span><strong id="metric-frame">—</strong><small>Nearest frame</small></article>
-          <article class="metric-card"><span>iR</span><strong id="metric-ir">95% target</strong><small id="metric-ru">Trial 10 value is final</small></article>
-        </section>
+        <div class="synchronized-plots" aria-label="Synchronized electrochemistry and Raman plots">
+          <section class="timeline-panel" aria-labelledby="timeline-title">
+            <div class="workspace-heading"><div><p class="eyebrow">ELECTROCHEMISTRY</p><h2 id="timeline-title">Potential and current</h2></div><span class="count-chip">Shared time</span></div>
+            <canvas id="timeline-canvas" class="data-canvas" width="680" height="350" aria-label="Simulated electrochemistry potential and current versus time"></canvas>
+            <div class="playback-controls">
+              <button id="play-toggle" class="button secondary" type="button">Play</button>
+              <input id="time-slider" type="range" min="0" max="120" step="0.1" value="0" aria-label="Selected elapsed time" />
+              <output id="time-output" for="time-slider">0.0 / 120.0 s</output>
+            </div>
+          </section>
 
-        <section class="timeline-panel" aria-labelledby="timeline-title">
-          <div class="workspace-heading"><div><p class="eyebrow">SHARED TIME AXIS</p><h2 id="timeline-title">Electrochemistry and optional RDE</h2></div><span class="count-chip">Simulated</span></div>
-          <canvas id="timeline-canvas" class="data-canvas" width="1100" height="390" aria-label="Simulated potential, current, and optional RDE speed versus time"></canvas>
-          <div class="playback-controls">
-            <button id="play-toggle" class="button secondary" type="button">Play</button>
-            <input id="time-slider" type="range" min="0" max="120" step="0.1" value="0" aria-label="Selected elapsed time" />
-            <output id="time-output" for="time-slider">0.0 / 120.0 s</output>
-          </div>
-        </section>
-
-        <div class="sync-layout">
           <section class="spectrum-panel" aria-labelledby="spectrum-title">
             <div class="workspace-heading"><div><p class="eyebrow">RAMAN</p><h2 id="spectrum-title">Spectrum at <span id="spectrum-time">—</span></h2></div><span id="spectrum-offset" class="count-chip">Δt —</span></div>
-            <canvas id="spectrum-canvas" class="data-canvas spectrum-canvas" width="730" height="330" aria-label="Nearest simulated Raman spectrum"></canvas>
+            <canvas id="spectrum-canvas" class="data-canvas spectrum-canvas" width="680" height="350" aria-label="Nearest simulated Raman spectrum"></canvas>
           </section>
-          <aside class="event-panel" aria-labelledby="event-title">
-            <div class="workspace-heading"><div><p class="eyebrow">EVENTS</p><h2 id="event-title">Run log</h2></div></div>
-            <ol id="event-list" class="event-list"></ol>
-          </aside>
         </div>
-
-        <section class="contract-panel compact-contract">
-          <div><strong>Raw clocks preserved</strong><p>Nearest-frame links include signed offsets and never imply simultaneity.</p></div>
-          <button id="export-session" class="button primary" type="button">Export session JSON</button>
-        </section>
       </section>
 
       <footer class="page-footer">
@@ -236,7 +218,7 @@
     <script src="protocols.js?v=echem-simulator-1"></script>
     <script src="smoke-test.js?v=echem-simulator-1"></script>
     <script src="simulator.js?v=echem-simulator-1"></script>
-    <script src="monitor.js?v=echem-simulator-1"></script>
+    <script src="monitor.js?v=echem-sync-2"></script>
     <script src="echem.js?v=echem-simulator-1"></script>
   </body>
 </html>

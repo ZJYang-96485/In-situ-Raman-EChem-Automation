@@ -1,7 +1,21 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const { buildEchemSeries, buildSessionPayload, raman } = require("./monitor.js");
+
+test("synchronized view is exactly two parallel plots without RDE presentation", () => {
+  const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
+  const styles = fs.readFileSync(path.join(__dirname, "styles.css"), "utf8");
+  const dataView = html.match(/<section id="data-view"[\s\S]*?<\/section>\s*<footer/)[0];
+  assert.match(dataView, /class="synchronized-plots"/);
+  assert.equal((dataView.match(/<canvas /g) || []).length, 2);
+  assert.match(dataView, /id="timeline-canvas"/);
+  assert.match(dataView, /id="spectrum-canvas"/);
+  assert.doesNotMatch(dataView, /RDE|RPM|Disk|metric-grid|event-list/);
+  assert.match(styles, /\.synchronized-plots\s*\{[^}]*grid-template-columns:\s*repeat\(2,/);
+});
 
 test("electrochemistry preview has monotonic time and verified trapezoidal charge", () => {
   const records = buildEchemSeries(false);

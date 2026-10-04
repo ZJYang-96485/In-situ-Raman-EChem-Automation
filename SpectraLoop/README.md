@@ -31,9 +31,11 @@ frames, explicit iR trials, derived CC, and commanded-only RDE values. Standard,
 trial-10, Ru-failure, acquisition-failure, and cleanup-failure scenarios remain
 entirely in the browser and always report zero hardware calls.
 
-The synchronized-data view uses those generated records for interface
-development. “Synchronized” means software alignment on a simulated shared
-elapsed-time axis; it does not claim measured device timing.
+The synchronized-data view places only the electrochemistry plot and Raman plot
+side by side on desktop, using a shared time cursor. RDE disk/RPM data and the
+run log are intentionally not displayed there. “Synchronized” means software
+alignment on a simulated shared elapsed-time axis; it does not claim measured
+device timing.
 
 The compact offline check validates the current builder values. Every result is
 available on demand, and the exported report always records simulation mode and
