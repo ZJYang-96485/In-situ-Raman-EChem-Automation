@@ -11,6 +11,7 @@ test("electrochemistry page exposes bridge, storage, and identity controls", () 
   const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-1");
 
   assert.match(html, /id="echem-bridge-summary"/);
+  assert.match(html, /id="echem-bridge-check-status"/);
   assert.match(html, /id="echem-select-storage"/);
   assert.match(html, /id="echem-discover-instrument"/);
   assert.match(html, /data-echem-confirmation="cell_output_off"/);

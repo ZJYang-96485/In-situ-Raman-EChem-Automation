@@ -43,6 +43,7 @@
       instrumentState: doc.querySelector("#echem-instrument-state"),
       instrumentDetail: doc.querySelector("#echem-instrument-detail"),
       actionStatus: doc.querySelector("#echem-bridge-action-status"),
+      checkStatus: doc.querySelector("#echem-bridge-check-status"),
       refreshButton: doc.querySelector("#echem-refresh-bridge"),
       storageButton: doc.querySelector("#echem-select-storage"),
       discoveryButton: doc.querySelector("#echem-discover-instrument"),
@@ -60,6 +61,11 @@
 
     function labeledStatus(element, text, kind) {
       element.replaceChildren(dot(kind), doc.createTextNode(text));
+    }
+
+    function checkMessage(text, kind = "") {
+      elements.checkStatus.textContent = text;
+      elements.checkStatus.className = `bridge-check-status${kind ? ` ${kind}` : ""}`;
     }
 
     function confirmations() {
@@ -110,27 +116,41 @@
     }
 
     async function refresh() {
+      elements.refreshButton.disabled = true;
+      elements.refreshButton.textContent = "Checking…";
+      checkMessage("Checking the authenticated bridge at 127.0.0.1:8765…", "warning");
       if (!bridgeApi) {
         client = null;
         showUnavailable("The bridge client is not present in this deployed site version.");
+        checkMessage("Bridge check failed: this deployed page does not include the local bridge client.", "failed");
+        elements.refreshButton.disabled = false;
+        elements.refreshButton.textContent = "Check bridge";
         return;
       }
       const token = bridgeApi.consumeBridgeToken();
       if (!token) {
         client = null;
-        showUnavailable("Double-click Start SpectraLoop.cmd on this instrument computer, then use the page it opens.");
+        showUnavailable("A bridge session token is missing. The webpage cannot start a Windows program by itself.");
+        checkMessage("Bridge not checked: double-click Start SpectraLoop.cmd on this computer and use the page that it opens. Keep its console window open.", "failed");
+        elements.refreshButton.disabled = false;
+        elements.refreshButton.textContent = "Check bridge";
         return;
       }
       try {
         client = new bridgeApi.BridgeClient({ token, baseUrl: bridgeBaseUrl() });
         renderStatus(await client.status());
+        checkMessage("Local bridge responded and authentication succeeded.", "safe");
         elements.actionStatus.textContent = "Bridge verified. No CHI hardware request has been made.";
         elements.actionStatus.style.color = "var(--safe)";
       } catch (error) {
         client = null;
         showUnavailable(error.message);
+        checkMessage(`Bridge check failed: ${error.message}`, "failed");
         elements.actionStatus.textContent = error.message;
         elements.actionStatus.style.color = "var(--danger)";
+      } finally {
+        elements.refreshButton.disabled = false;
+        elements.refreshButton.textContent = "Check bridge";
       }
     }
 
