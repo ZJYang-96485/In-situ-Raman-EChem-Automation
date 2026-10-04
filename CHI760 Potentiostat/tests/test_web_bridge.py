@@ -50,6 +50,11 @@ class WebBridgeTests(unittest.TestCase):
         root = Path(self.temporary.name)
         self.selected_folder = root / "chosen-data"
         self.selected_folder.mkdir()
+        self.site_directory = root / "site"
+        self.site_directory.mkdir()
+        (self.site_directory / "echem.html").write_text(
+            "<!doctype html><title>SpectraLoop test</title>", encoding="utf-8"
+        )
         self.config_path = root / "settings" / "bridge.json"
         self.state = BridgeState(
             token="test-secret-token",
@@ -58,7 +63,9 @@ class WebBridgeTests(unittest.TestCase):
             directory_picker=lambda _initial: self.selected_folder,
             discovery_approval=lambda: True,
         )
-        self.server = create_server(self.state, port=0)
+        self.server = create_server(
+            self.state, port=0, site_directory=self.site_directory
+        )
         self.port = self.server.server_address[1]
         self.origin = f"http://127.0.0.1:{self.port}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -154,6 +161,71 @@ class WebBridgeTests(unittest.TestCase):
             self.assertEqual(
                 "true", response.headers["Access-Control-Allow-Private-Network"]
             )
+
+        response, raw = self.request(
+            "/v1/status", origin="https://spectraloop.org"
+        )
+        self.assertEqual(200, response.status)
+        self.assertEqual(
+            "https://spectraloop.org",
+            response.headers["Access-Control-Allow-Origin"],
+        )
+        self.assertEqual("v1", json.loads(raw.decode("utf-8"))["api_version"])
+
+    def test_local_network_preflight_variant_is_acknowledged(self) -> None:
+        request = Request(
+            f"http://127.0.0.1:{self.port}/v1/status",
+            headers={
+                "Origin": "https://spectraloop.org",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization",
+                "Access-Control-Request-Local-Network": "true",
+            },
+            method="OPTIONS",
+        )
+
+        with urlopen(request, timeout=2) as response:
+            self.assertEqual(204, response.status)
+            self.assertEqual(
+                "true", response.headers["Access-Control-Allow-Local-Network"]
+            )
+
+    def test_local_page_uses_http_only_cookie_without_fragment_token(self) -> None:
+        with urlopen(
+            f"http://127.0.0.1:{self.port}/echem.html", timeout=2
+        ) as page_response:
+            cookie = page_response.headers["Set-Cookie"]
+
+        self.assertIn("spectraloop_bridge_session=test-secret-token", cookie)
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=Strict", cookie)
+        request = Request(
+            f"http://127.0.0.1:{self.port}/v1/status",
+            headers={
+                "Cookie": cookie.split(";", 1)[0],
+                "Sec-Fetch-Site": "same-origin",
+            },
+        )
+        with urlopen(request, timeout=2) as response:
+            self.assertEqual(200, response.status)
+
+    def test_public_origin_cannot_use_local_page_cookie(self) -> None:
+        request = Request(
+            f"http://127.0.0.1:{self.port}/v1/status",
+            headers={
+                "Origin": "https://spectraloop.org",
+                "Cookie": "spectraloop_bridge_session=test-secret-token",
+            },
+        )
+
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(request, timeout=2)
+
+        self.assertEqual(401, caught.exception.code)
+        self.assertEqual(
+            "unauthorized",
+            self.error_payload(caught.exception)["error"]["code"],  # type: ignore[index]
+        )
 
     def test_storage_picker_persists_locally_but_api_returns_only_folder_name(self) -> None:
         response, raw = self.request(
@@ -265,6 +337,11 @@ class WebBridgeTests(unittest.TestCase):
     def test_server_refuses_non_loopback_binding(self) -> None:
         with self.assertRaises(ValueError):
             create_server(self.state, host="0.0.0.0", port=0)
+
+    def test_second_bridge_cannot_share_the_same_port(self) -> None:
+        with self.assertRaises(OSError):
+            duplicate = create_server(self.state, port=self.port)
+            duplicate.server_close()
 
 
 if __name__ == "__main__":

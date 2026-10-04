@@ -7,8 +7,8 @@ const { describeSnapshot } = require("./echem-bridge.js");
 
 test("electrochemistry page exposes bridge, storage, and identity controls", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
-  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-1");
-  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-1");
+  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-3");
+  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-3");
 
   assert.match(html, /id="echem-bridge-summary"/);
   assert.match(html, /id="echem-bridge-check-status"/);

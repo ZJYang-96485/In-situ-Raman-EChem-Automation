@@ -46,7 +46,7 @@ test("client sends bearer token only to fixed loopback bridge", async () => {
   assert.equal(requests[0].url, "http://127.0.0.1:8765/v1/status");
   assert.equal(requests[0].options.headers.Authorization, `Bearer ${token}`);
   assert.equal(requests[0].options.credentials, "omit");
-  assert.equal(requests[0].options.targetAddressSpace, "local");
+  assert.equal("targetAddressSpace" in requests[0].options, false);
   assert.throws(
     () => new BridgeClient({ token, baseUrl: "https://attacker.invalid" }),
     (error) => error instanceof BridgeClientError && error.code === "invalid_bridge_url",
@@ -55,8 +55,8 @@ test("client sends bearer token only to fixed loopback bridge", async () => {
 
 test("setup page loads the authenticated bridge client before its UI controller", () => {
   const html = fs.readFileSync(path.join(__dirname, "setup.html"), "utf8");
-  const bridgePosition = html.indexOf('<script src="bridge-client.js?v=local-bridge-1"></script>');
-  const appPosition = html.indexOf('<script src="app.js?v=local-bridge-1"></script>');
+  const bridgePosition = html.indexOf('<script src="bridge-client.js?v=bridge-session-3"></script>');
+  const appPosition = html.indexOf('<script src="app.js?v=bridge-session-3"></script>');
 
   assert.ok(bridgePosition >= 0);
   assert.ok(appPosition > bridgePosition);
@@ -79,4 +79,20 @@ test("bridge API errors remain structured for the setup interface", async () => 
     client.discoverInstrument({}),
     (error) => error.code === "vendor_interface_unavailable" && error.status === 409,
   );
+});
+
+test("local pages can use an HttpOnly same-origin bridge session", async () => {
+  const requests = [];
+  const client = new BridgeClient({
+    cookieAuth: true,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return { ok: true, status: 200, json: async () => ({ api_version: "v1" }) };
+    },
+  });
+
+  await client.status();
+
+  assert.equal(requests[0].options.credentials, "same-origin");
+  assert.equal("Authorization" in requests[0].options.headers, false);
 });

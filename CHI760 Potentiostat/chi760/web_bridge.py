@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hmac
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import mimetypes
@@ -37,7 +38,8 @@ from .errors import (
 from .live_backend import CHI760ELiveBackend, LiveConnectionState
 
 
-BRIDGE_VERSION = "0.1.0"
+BRIDGE_VERSION = "0.1.1"
+BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 MAX_REQUEST_BYTES = 64 * 1024
@@ -323,6 +325,9 @@ class BridgeState:
 
 class SpectraLoopHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
+    # On Windows, HTTPServer's SO_REUSEADDR default can allow two independent
+    # bridge processes to share one port and alternate requests/tokens.
+    allow_reuse_address = False
 
     def __init__(
         self,
@@ -355,10 +360,19 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Access-Control-Max-Age", "600")
-        if self.headers.get("Access-Control-Request-Private-Network") == "true":
-            self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        if self.headers.get("Access-Control-Request-Local-Network") == "true":
+            self.send_header("Access-Control-Allow-Local-Network", "true")
         self.send_header("Content-Length", "0")
         self.end_headers()
+        self.log_message(
+            "bridge preflight origin=%r method=%r headers=%r private=%r local=%r",
+            origin,
+            self.headers.get("Access-Control-Request-Method"),
+            self.headers.get("Access-Control-Request-Headers"),
+            self.headers.get("Access-Control-Request-Private-Network"),
+            self.headers.get("Access-Control-Request-Local-Network"),
+        )
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         route = urlsplit(self.path).path
@@ -447,18 +461,51 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
             self._json_error(HTTPStatus.BAD_REQUEST, "invalid_host", "Invalid Host header.")
             return False
         origin = self.headers.get("Origin")
-        if not self._origin_allowed(origin):
+        local_cookie_valid = self._local_cookie_valid(origin)
+        if not self._origin_allowed(origin) and not local_cookie_valid:
             self._json_error(HTTPStatus.FORBIDDEN, "origin_not_allowed", "Origin is not allowed.")
             return False
         authorization = self.headers.get("Authorization", "")
         prefix = "Bearer "
         supplied = authorization[len(prefix) :] if authorization.startswith(prefix) else ""
-        if not supplied or not hmac.compare_digest(
+        bearer_valid = bool(supplied) and hmac.compare_digest(
             supplied, self.server.bridge_state.token
-        ):
+        )
+        if not bearer_valid and not local_cookie_valid:
             self._json_error(HTTPStatus.UNAUTHORIZED, "unauthorized", "Bridge token is missing or invalid.")
             return False
         return True
+
+    def _local_cookie_valid(self, origin: str | None) -> bool:
+        port = self.server.server_address[1]
+        local_origins = {
+            f"http://127.0.0.1:{port}",
+            f"http://localhost:{port}",
+        }
+        same_origin_request = origin in local_origins
+        if origin is None:
+            fetch_site = self.headers.get("Sec-Fetch-Site", "").lower()
+            referer = self.headers.get("Referer", "")
+            parsed_referer = urlsplit(referer)
+            referer_origin = (
+                f"{parsed_referer.scheme}://{parsed_referer.netloc}"
+                if parsed_referer.scheme and parsed_referer.netloc
+                else ""
+            )
+            same_origin_request = (
+                fetch_site == "same-origin" or referer_origin in local_origins
+            )
+        if not same_origin_request:
+            return False
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get("Cookie", ""))
+        except Exception:
+            return False
+        morsel = cookie.get(BRIDGE_COOKIE_NAME)
+        return morsel is not None and hmac.compare_digest(
+            morsel.value, self.server.bridge_state.token
+        )
 
     def _valid_host(self) -> bool:
         host = self.headers.get("Host", "").lower()
@@ -519,6 +566,12 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if candidate.suffix.lower() == ".html":
+            self.send_header(
+                "Set-Cookie",
+                f"{BRIDGE_COOKIE_NAME}={self.server.bridge_state.token}; "
+                "HttpOnly; SameSite=Strict; Path=/v1",
+            )
         self.end_headers()
         self.wfile.write(content)
 
@@ -617,11 +670,18 @@ def main(argv: list[str] | None = None) -> int:
         storage=StorageSettings(args.config),
         gateway=UnavailableDiscoveryGateway(),
     )
-    server = create_server(
-        state,
-        port=args.port,
-        site_directory=site_directory,
-    )
+    try:
+        server = create_server(
+            state,
+            port=args.port,
+            site_directory=site_directory,
+        )
+    except OSError as error:
+        print(
+            f"Could not start SpectraLoop bridge on 127.0.0.1:{args.port}: {error}"
+        )
+        print("Close the earlier bridge console, then run the launcher once.")
+        return 2
     port = server.server_address[1]
     local_start_url = f"http://127.0.0.1:{port}/{args.start_page}.html"
     browser_url = _browser_url(args.web_url or local_start_url, token)

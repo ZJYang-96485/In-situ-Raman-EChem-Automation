@@ -255,13 +255,18 @@ async function refreshBridgeStatus() {
     return;
   }
   const token = SpectraLoopBridge.consumeBridgeToken();
-  if (!token) {
+  const localCookieAuth = window.location.hostname === "127.0.0.1";
+  if (!token && !localCookieAuth) {
     bridgeClient = null;
     showBridgeUnavailable("Double-click Start SpectraLoop.cmd on the instrument computer, then use the page it opens.");
     return;
   }
   try {
-    bridgeClient = new SpectraLoopBridge.BridgeClient({ token, baseUrl: bridgeBaseUrl() });
+    bridgeClient = new SpectraLoopBridge.BridgeClient({
+      token,
+      baseUrl: bridgeBaseUrl(),
+      cookieAuth: !token && localCookieAuth,
+    });
     renderBridgeStatus(await bridgeClient.status());
     bridgeActionStatus.textContent = "Bridge verified. No hardware request has been made.";
     bridgeActionStatus.style.color = "var(--safe)";

@@ -60,10 +60,11 @@
   }
 
   class BridgeClient {
-    constructor({ token, baseUrl = DEFAULT_BRIDGE_URL, fetchImpl } = {}) {
-      if (!validToken(token)) throw new BridgeClientError("Start the local bridge to create a secure session.", "token_missing");
+    constructor({ token, baseUrl = DEFAULT_BRIDGE_URL, fetchImpl, cookieAuth = false } = {}) {
+      if (!validToken(token) && cookieAuth !== true) throw new BridgeClientError("Start the local bridge to create a secure session.", "token_missing");
       if (!validBridgeUrl(baseUrl)) throw new BridgeClientError("The bridge URL must remain loopback-only.", "invalid_bridge_url");
-      this.token = token;
+      this.token = validToken(token) ? token : null;
+      this.cookieAuth = cookieAuth === true;
       this.baseUrl = baseUrl.replace(/\/$/, "");
       this.fetchImpl = fetchImpl || (typeof fetch === "function" ? fetch.bind(globalThis) : null);
       if (!this.fetchImpl) throw new BridgeClientError("This browser does not support local bridge requests.", "fetch_unavailable");
@@ -75,11 +76,10 @@
         response = await this.fetchImpl(`${this.baseUrl}${path}`, {
           method,
           mode: "cors",
-          targetAddressSpace: "local",
           cache: "no-store",
-          credentials: "omit",
+          credentials: this.cookieAuth ? "same-origin" : "omit",
           headers: {
-            Authorization: `Bearer ${this.token}`,
+            ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
             ...(body === undefined ? {} : { "Content-Type": "application/json" }),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),

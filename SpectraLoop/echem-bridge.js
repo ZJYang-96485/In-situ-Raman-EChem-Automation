@@ -128,7 +128,8 @@
         return;
       }
       const token = bridgeApi.consumeBridgeToken();
-      if (!token) {
+      const localCookieAuth = browserWindow.location.hostname === "127.0.0.1";
+      if (!token && !localCookieAuth) {
         client = null;
         showUnavailable("A bridge session token is missing. The webpage cannot start a Windows program by itself.");
         checkMessage("Bridge not checked: double-click Start SpectraLoop.cmd on this computer and use the page that it opens. Keep its console window open.", "failed");
@@ -137,7 +138,11 @@
         return;
       }
       try {
-        client = new bridgeApi.BridgeClient({ token, baseUrl: bridgeBaseUrl() });
+        client = new bridgeApi.BridgeClient({
+          token,
+          baseUrl: bridgeBaseUrl(),
+          cookieAuth: !token && localCookieAuth,
+        });
         renderStatus(await client.status());
         checkMessage("Local bridge responded and authentication succeeded.", "safe");
         elements.actionStatus.textContent = "Bridge verified. No CHI hardware request has been made.";
