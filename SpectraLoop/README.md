@@ -51,7 +51,7 @@ planned record fields and alignment rules.
 
 Double-click `Start SpectraLoop.cmd` in the repository root. It starts the
 dependency-free Python bridge on `127.0.0.1:8765` and opens
-`https://spectraloop.org/setup.html` with a new, temporary authentication
+`https://spectraloop.org/echem.html` with a new, temporary authentication
 token. The page can then open the normal
 Windows folder picker and persist the chosen data root in the current user's
 local application settings. Users do not need to open VS Code or type a path.

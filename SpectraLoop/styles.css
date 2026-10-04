@@ -122,6 +122,12 @@ h3 { margin-bottom: 0.4rem; color: var(--navy); font-size: 1rem; }
 .bridge-actions { justify-content: flex-start; }
 .bridge-actions .card-note { margin: 0; }
 .bridge-lock-note { margin-top: 1rem; }
+.echem-bridge-panel { margin: 1rem 0; }
+.echem-bridge-panel .bridge-heading > div { max-width: 44rem; }
+.echem-bridge-panel .bridge-heading .card-note { margin-bottom: 0; }
+.bridge-discovery-details { margin-top: 0.9rem; border-top: 1px solid var(--line); }
+.bridge-discovery-details > summary { padding-top: 0.85rem; color: var(--navy); cursor: pointer; font-size: 0.82rem; font-weight: 700; }
+.bridge-discovery-details[open] > summary { margin-bottom: 0.6rem; }
 .status-dot.safe { background: var(--safe); box-shadow: 0 0 0 3px var(--safe-soft); }
 .status-dot.danger { background: var(--danger); box-shadow: 0 0 0 3px #ffe7e7; }
 

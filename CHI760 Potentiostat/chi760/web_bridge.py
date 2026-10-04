@@ -595,6 +595,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--site-dir", type=Path)
     parser.add_argument("--config", type=Path, default=default_config_path())
     parser.add_argument(
+        "--start-page",
+        choices=("setup", "echem"),
+        default="setup",
+        help="Bundled page to open when --web-url is not supplied.",
+    )
+    parser.add_argument(
         "--web-url",
         help="Optional deployed SpectraLoop setup URL; defaults to the bundled local UI.",
     )
@@ -617,8 +623,8 @@ def main(argv: list[str] | None = None) -> int:
         site_directory=site_directory,
     )
     port = server.server_address[1]
-    local_setup_url = f"http://127.0.0.1:{port}/setup.html"
-    browser_url = _browser_url(args.web_url or local_setup_url, token)
+    local_start_url = f"http://127.0.0.1:{port}/{args.start_page}.html"
+    browser_url = _browser_url(args.web_url or local_start_url, token)
     print(f"SpectraLoop local bridge {BRIDGE_VERSION}")
     print(f"Listening only on http://127.0.0.1:{port}")
     print("Mode: identity discovery only; experiments are disabled")

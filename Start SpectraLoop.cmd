@@ -22,11 +22,11 @@ set "SPECTRALOOP_PYTHON_ARGS="
 :run_bridge
 pushd "%SPECTRALOOP_ROOT%CHI760 Potentiostat"
 if "%SPECTRALOOP_LOCAL_MODE%"=="1" goto run_local_bridge
-"%SPECTRALOOP_PYTHON%" %SPECTRALOOP_PYTHON_ARGS% -B -m chi760.web_bridge --site-dir "%SPECTRALOOP_ROOT%SpectraLoop" --web-url "https://spectraloop.org/setup.html"
+"%SPECTRALOOP_PYTHON%" %SPECTRALOOP_PYTHON_ARGS% -B -m chi760.web_bridge --site-dir "%SPECTRALOOP_ROOT%SpectraLoop" --start-page echem --web-url "https://spectraloop.org/echem.html?view=protocol"
 goto bridge_finished
 
 :run_local_bridge
-"%SPECTRALOOP_PYTHON%" %SPECTRALOOP_PYTHON_ARGS% -B -m chi760.web_bridge --site-dir "%SPECTRALOOP_ROOT%SpectraLoop"
+"%SPECTRALOOP_PYTHON%" %SPECTRALOOP_PYTHON_ARGS% -B -m chi760.web_bridge --site-dir "%SPECTRALOOP_ROOT%SpectraLoop" --start-page echem
 
 :bridge_finished
 set "SPECTRALOOP_EXIT=%ERRORLEVEL%"

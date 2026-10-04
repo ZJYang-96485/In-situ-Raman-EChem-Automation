@@ -7,7 +7,7 @@
     <title>SpectraLoop — Electrochemistry</title>
     <meta name="theme-color" content="#061b3b" />
     <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
-    <link rel="stylesheet" href="styles.css?v=echem-sync-2" />
+    <link rel="stylesheet" href="styles.css?v=echem-bridge-1" />
   </head>
   <body>
     <main class="shell wide-shell">
@@ -20,9 +20,56 @@
         <div class="header-actions">
           <a class="site-link" href="setup.html">Setup</a>
           <a class="site-link" href="index.html">Project</a>
-          <div class="safe-status"><span class="status-dot"></span>Offline · no hardware I/O</div>
+          <div class="safe-status" id="echem-bridge-summary"><span class="status-dot amber"></span>Local bridge not connected · no hardware I/O</div>
         </div>
       </header>
+
+      <section class="bridge-panel echem-bridge-panel" aria-labelledby="echem-bridge-heading">
+        <div class="bridge-heading">
+          <div>
+            <p class="eyebrow">LOCAL CHI CONNECTION</p>
+            <h2 id="echem-bridge-heading">Instrument computer</h2>
+            <p class="card-note">Connect this page to the loopback service running beside the CHI 760E.</p>
+          </div>
+          <button class="button ghost compact-button" id="echem-refresh-bridge" type="button">Check bridge</button>
+        </div>
+        <div class="bridge-grid">
+          <div class="bridge-item">
+            <span class="bridge-label">Local bridge</span>
+            <strong id="echem-bridge-state"><span class="status-dot amber"></span>Not connected</strong>
+            <small id="echem-bridge-detail">Open this page using <em>Start SpectraLoop.cmd</em> on the instrument computer.</small>
+          </div>
+          <div class="bridge-item">
+            <span class="bridge-label">Data folder</span>
+            <strong id="echem-storage-state">Not selected</strong>
+            <small id="echem-storage-detail">The selected folder is managed locally and is not exposed to the public site.</small>
+            <button class="button secondary compact-button" id="echem-select-storage" type="button" disabled>Choose storage folder</button>
+          </div>
+          <div class="bridge-item">
+            <span class="bridge-label">Real CHI 760E</span>
+            <strong id="echem-instrument-state">Not checked</strong>
+            <small id="echem-instrument-detail">A verified vendor adapter is required before identity discovery.</small>
+          </div>
+        </div>
+        <details class="bridge-discovery-details">
+          <summary>Read-only instrument identity check</summary>
+          <fieldset class="identity-confirmations" id="echem-identity-confirmations" disabled>
+            <legend>Confirm the physical bench state</legend>
+            <label><input type="checkbox" data-echem-confirmation="identity_only" /> Identity only; do not run an experiment.</label>
+            <label><input type="checkbox" data-echem-confirmation="no_sample_connected" /> No sample or electrochemical cell is connected.</label>
+            <label><input type="checkbox" data-echem-confirmation="electrode_leads_safe" /> Electrode leads are disconnected or safe.</label>
+            <label><input type="checkbox" data-echem-confirmation="cell_output_off" /> CHI cell output is off.</label>
+          </fieldset>
+          <div class="bridge-actions">
+            <button class="button primary" id="echem-discover-instrument" type="button" disabled>Read instrument identity</button>
+            <p id="echem-bridge-action-status" class="card-note" role="status" aria-live="polite">No hardware request has been made. Windows will request separate approval before a future identity call.</p>
+          </div>
+        </details>
+        <aside class="safety-callout bridge-lock-note">
+          <strong>Protocol execution is still locked.</strong>
+          Connecting the bridge or reading identity does not authorize OCP, EIS, CV, iR compensation, cell control, Raman, RDE, or any other experiment.
+        </aside>
+      </section>
 
       <nav class="echem-switch" role="tablist" aria-label="Electrochemistry workspace">
         <button class="active" type="button" role="tab" aria-selected="true" aria-controls="protocol-view" data-view-target="protocol">Protocol Builder</button>
@@ -215,6 +262,8 @@
         <a href="setup.html">Experiment setup →</a>
       </footer>
     </main>
+    <script src="bridge-client.js?v=echem-bridge-1"></script>
+    <script src="echem-bridge.js?v=echem-bridge-1"></script>
     <script src="protocols.js?v=echem-simulator-1"></script>
     <script src="smoke-test.js?v=echem-simulator-1"></script>
     <script src="simulator.js?v=echem-simulator-1"></script>
