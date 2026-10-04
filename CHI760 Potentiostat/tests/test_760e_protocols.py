@@ -23,10 +23,16 @@ from chi760 import (
     profile_for,
     technique_uses_ir_compensation,
     validate_ru_measurements,
+    request_rde_hardware_control,
+    HardwareOperationBlockedError,
 )
 
 
 class CHI760EProtocolTests(unittest.TestCase):
+    def test_optional_rde_hardware_control_is_explicitly_blocked(self):
+        with self.assertRaises(HardwareOperationBlockedError):
+            request_rde_hardware_control()
+
     def test_760e_exposes_all_documented_libec_techniques(self):
         profile = profile_for("760E")
         expected = {

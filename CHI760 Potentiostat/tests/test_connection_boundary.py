@@ -224,6 +224,19 @@ class ConnectionBoundaryTests(unittest.TestCase):
         )
         self.assertFalse(unknown_machine.is_32_bit_windows_pe)
 
+    def test_preflight_does_not_mistake_desktop_executable_for_sdk_dll(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable_path = Path(directory) / "chi760e.exe"
+            executable_path.write_bytes(_minimal_pe(machine=0x014C, magic=0x10B))
+            candidate = inspect_sdk_candidate(executable_path)
+            report = run_connection_preflight((executable_path,))
+
+        self.assertEqual("desktop_executable", candidate.candidate_kind)
+        self.assertTrue(candidate.is_32_bit_windows_pe)
+        self.assertFalse(candidate.is_32_bit_windows_dll)
+        self.assertEqual("documented_32_bit_library_not_found", report.status)
+        self.assertFalse(report.host_can_load_documented_libec)
+
     def test_preflight_reads_export_names_without_loading_candidate(self):
         with tempfile.TemporaryDirectory() as directory:
             dll_path = Path(directory) / "candidate.dll"

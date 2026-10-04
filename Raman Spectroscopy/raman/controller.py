@@ -26,9 +26,16 @@ class RamanController:
     package to a potentiostat implementation.
     """
 
-    def __init__(self, backend: RamanBackend, *, live_connection_enabled: bool = False):
+    def __init__(
+        self,
+        backend: RamanBackend,
+        *,
+        live_connection_enabled: bool = False,
+        electrochemistry_only: bool = True,
+    ):
         self.backend = backend
         self._live_connection_enabled = live_connection_enabled
+        self._electrochemistry_only = electrochemistry_only
         self._connection_state = ConnectionState.DISCONNECTED
         self._identity: InstrumentIdentity | None = None
 
@@ -96,6 +103,7 @@ class RamanController:
         correlation_metadata: Mapping[str, Any] | None = None,
     ) -> RamanAcquisitionResult:
         self._require_connection()
+        self._require_electrochemistry_scope("Raman acquisition")
         if plan.trigger_mode is not TriggerMode.SOFTWARE:
             raise RamanSafetyError(
                 "hardware-triggered acquisition is disabled until the trigger "
@@ -111,6 +119,7 @@ class RamanController:
 
     def abort(self) -> None:
         self._require_connection()
+        self._require_electrochemistry_scope("Raman abort")
         self.backend.abort()
 
     def _require_connection(self) -> None:
@@ -122,6 +131,7 @@ class RamanController:
     def _require_live_connection_authorization(self) -> None:
         if getattr(self.backend, "is_simulated", False):
             return
+        self._require_electrochemistry_scope("live Raman connection")
         if not self._live_connection_enabled:
             raise RamanSafetyError(
                 "live Raman connection is disabled; enable it only after the "
@@ -130,6 +140,14 @@ class RamanController:
         if not getattr(self.backend, "hardware_verified", False):
             raise RamanSafetyError(
                 "live Raman connection requires a verified hardware profile"
+            )
+
+    def _require_electrochemistry_scope(self, operation: str) -> None:
+        if self._electrochemistry_only and not getattr(
+            self.backend, "is_simulated", False
+        ):
+            raise RamanSafetyError(
+                f"{operation} is blocked by the electrochemistry-only runtime profile"
             )
 
     def __enter__(self) -> "RamanController":

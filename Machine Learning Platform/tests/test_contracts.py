@@ -3,12 +3,28 @@ import unittest
 from machine_learning import (
     AnalysisProjectConfiguration,
     AnalysisTask,
+    AutomatedActionBlockedError,
     PreprocessedDatasetManifest,
+    request_automated_decision,
+    request_ml_action,
     validate_analysis_readiness,
 )
 
 
 class MachineLearningContractsTests(unittest.TestCase):
+    def test_ml_and_decision_actions_cannot_reach_callbacks(self):
+        calls = 0
+
+        def action():
+            nonlocal calls
+            calls += 1
+
+        for request in (request_ml_action, request_automated_decision):
+            with self.subTest(request=request.__name__):
+                with self.assertRaises(AutomatedActionBlockedError):
+                    request(action)
+
+        self.assertEqual(0, calls)
     def test_dataset_requires_raman_preprocessing_provenance(self):
         with self.assertRaisesRegex(ValueError, "preprocessing_reference"):
             PreprocessedDatasetManifest(

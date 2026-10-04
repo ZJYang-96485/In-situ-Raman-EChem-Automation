@@ -4,6 +4,41 @@ This module provides a connection-free, model-profiled planning surface for CH
 Instruments 760-series automation. The current development target is the CHI
 760E.
 
+## Electrochemistry-only Windows node
+
+The default `ELECTROCHEMISTRY_ONLY` runtime profile permits only a verified CHI
+discovery transport. Experiment execution, cell control, iR application, Raman
+acquisition, laser and TTL control, RDE motor control, ML actions, and automated
+decisions raise before a hardware callback can run. Simulation, replay, data
+display/import, and derived calculations remain available.
+
+`CHI760ELiveBackend` is discovery-only and contains no guessed DLL, COM, serial,
+or executable binding. It can use an adapter only when matching vendor evidence
+supplies exact open, identity, capability, and close identifiers. Missing
+values, missing return codes, failures, and timeouts are errors and close the
+logical session. Every experiment method remains blocked even when a fake
+discovery adapter is present.
+
+The installed CHI 760E help on the audited Windows computer documents a desktop
+command-line macro runner. That path includes experiment, cell, trigger, and
+RDE commands but no read-only identity query. It is therefore recorded as
+evidence and is not invoked. A connected USB/serial cable does not change this
+gate.
+
+`RunDataStore` reserves unique timestamped run directories, refuses overwrite,
+keeps raw and processed files separate, flushes append-only records, and uses
+atomic metadata/protocol writes. Until an experiment is configured and
+authorized, the real `data/runs/` directory remains empty; read-only inspection
+records belong under `data/discovery/` and simulations under
+`data/simulations/`.
+
+`chi760.web_bridge` exposes the same fail-closed boundary to the SpectraLoop
+browser UI. It listens only on loopback, requires a per-launch bearer token,
+restricts browser origins, and exposes storage selection plus identity
+discovery only. Its default gateway is unavailable and makes zero hardware
+calls. A future ready adapter also requires a local Windows approval immediately
+before discovery. There is deliberately no experiment-control HTTP endpoint.
+
 ```python
 from chi760 import CHI760Controller, MockCHI760
 

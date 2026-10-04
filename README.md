@@ -18,7 +18,7 @@ The controller and parameter models live in
 `MockCHI760` and the traceable `DryRunCHI760E` backend exercise the automation
 workflow without connecting to an instrument. Select `760B`, `760C`, `760D`, or `760E` when creating
 `CHI760Controller`; each profile gates the techniques that this project exposes.
-This repository does not yet include a live hardware driver.
+This repository does not yet include a verified live hardware driver.
 
 For the 760E, the offline surface includes the techniques listed in the public
 libec model matrix: CV, i-t, CA, SWV, IMP/EIS, IMPE, OCPT/OCP, STEP, and
@@ -34,6 +34,12 @@ A production backend, including the exact automatic iR-compensation parameter
 mapping and readback, must be implemented and validated against the
 vendor-supported CHI 760 interface before it is used with hardware. It must
 be validated separately for every selected model profile.
+
+The Windows execution-node boundary is now default-deny. The live 760E backend
+accepts only a fully evidenced discovery adapter and otherwise raises before
+any vendor transport call. All experiment and non-electrochemistry hardware
+domains remain blocked; simulation, replay, import, display, and post-processing
+remain available.
 
 The current connection boundary keeps all unverified vendor entry points and
 parameter identifiers unresolved. On macOS it can inspect copied SDK DLLs
@@ -76,17 +82,28 @@ a second cleaning pipeline.
 
 [`SpectraLoop`](SpectraLoop) is the user-friendly first setup app for a
 coordinated electrochemistry/Raman workflow and a future safety-gated
-decision-automation layer. It runs locally in a browser and exports
+decision-automation layer. It runs in a browser and exports
 configuration, protocol, check-report, and simulated-session JSON. Its single electrochemistry page switches
 between a CHI 760E protocol builder and synchronized data, with optional
 disk-only RDE planning, a compact offline check, and a connection-free
 execution simulator driven by the current protocol. The simulator generates
 deterministic synchronized data and explicit fault states with zero hardware
 calls. No hardware, laser, trigger, physical iR action, or automated decision
-action is available from the app.
+action is available from the app. A loopback-only local bridge now lets the
+setup page select a data folder using the Windows folder picker and provides
+the secured boundary for a future verified CHI identity adapter. No experiment
+endpoint is enabled.
+
+On the instrument computer, double-click `Start SpectraLoop.cmd`; no VS Code
+session or Python package installation is required. The launcher resolves the
+repository location at runtime, starts the bridge only on `127.0.0.1`, and opens
+`spectraloop.org` with a temporary authentication token. The same bridge can
+serve the bundled interface when working offline by double-clicking
+`Start SpectraLoop Local.cmd`.
 
 ### GitHub Pages
 
 The same app is prepared for GitHub Pages through the repository workflow
 `Deploy SpectraLoop to GitHub Pages`. GitHub Pages hosts the static interface;
-live Raman and potentiostat control remain local to the instrument computer.
+all storage and future potentiostat access remain local to the instrument
+computer and require the authenticated bridge.

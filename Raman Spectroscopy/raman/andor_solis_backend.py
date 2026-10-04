@@ -22,15 +22,23 @@ class AndorSolisBackend:
 
     is_simulated = False
 
-    def __init__(self, profile: RamanHardwareProfile, *, connection_enabled: bool = False):
+    def __init__(
+        self,
+        profile: RamanHardwareProfile,
+        *,
+        connection_enabled: bool = False,
+        electrochemistry_only: bool = True,
+    ):
         self.profile = profile
         self.connection_enabled = connection_enabled
+        self.electrochemistry_only = electrochemistry_only
 
     @property
     def hardware_verified(self) -> bool:
         return self.profile.verified
 
     def connect(self) -> InstrumentIdentity:
+        self._require_electrochemistry_scope("live Andor/Solis connection")
         if not self.connection_enabled:
             raise RamanSafetyError(
                 "live Andor/Solis connection is disabled in the Raman configuration"
@@ -46,13 +54,34 @@ class AndorSolisBackend:
         )
 
     def disconnect(self) -> None:
-        """No-op: this scaffold never opens a hardware connection."""
+        raise RamanSafetyError(
+            "Andor/Solis disconnect is blocked; this scaffold never opens a session"
+        )
 
     def acquire(self, plan: RamanAcquisitionPlan) -> RamanAcquisitionResult:
+        self._require_electrochemistry_scope("live Raman acquisition")
         raise RamanHardwareNotConfiguredError(
             "No live Andor/Solis acquisition is implemented; use MockRamanBackend "
             "until the hardware integration is validated."
         )
 
     def abort(self) -> None:
-        """No-op: this scaffold never starts a hardware acquisition."""
+        raise RamanSafetyError(
+            "Andor/Solis abort is blocked; this scaffold never starts acquisition"
+        )
+
+    def request_laser_control(self) -> None:
+        raise RamanSafetyError(
+            "laser control is blocked by the electrochemistry-only runtime profile"
+        )
+
+    def request_ttl_trigger(self) -> None:
+        raise RamanSafetyError(
+            "TTL triggering is blocked by the electrochemistry-only runtime profile"
+        )
+
+    def _require_electrochemistry_scope(self, operation: str) -> None:
+        if self.electrochemistry_only:
+            raise RamanSafetyError(
+                f"{operation} is blocked by the electrochemistry-only runtime profile"
+            )

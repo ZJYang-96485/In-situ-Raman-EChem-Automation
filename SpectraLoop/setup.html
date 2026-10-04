@@ -11,20 +11,20 @@
     <meta name="theme-color" content="#061b3b" />
     <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
     <link rel="shortcut icon" href="assets/favicon.png?v=2" type="image/png" />
-    <link rel="stylesheet" href="styles.css?v=landing-compact-logo-1" />
+    <link rel="stylesheet" href="styles.css?v=local-bridge-1" />
   </head>
   <body>
     <main class="shell">
       <header class="hero">
         <div class="title-block">
-          <p class="eyebrow">CONFIGURATION CONSOLE · VERSION 0.1</p>
+          <p class="eyebrow">CONFIGURATION CONSOLE · VERSION 0.2</p>
           <h1>SpectraLoop</h1>
           <p class="subtitle">Adaptive Operando Raman Electrochemistry and Decision Automation Platform</p>
         </div>
         <div class="header-actions">
           <a class="site-link" href="index.html">Project introduction</a>
           <a class="site-link" href="echem.html">Electrochemistry</a>
-          <div class="safe-status"><span class="status-dot"></span>Offline configuration · no hardware I/O</div>
+          <div class="safe-status" id="bridge-summary"><span class="status-dot amber"></span>Local bridge not checked</div>
         </div>
       </header>
 
@@ -73,12 +73,55 @@
             <label class="field">
               <span>Automation backend</span>
               <select id="chi-backend" name="chi-backend">
+                <option value="local_bridge">Local SpectraLoop bridge</option>
                 <option value="mock">Mock / offline development</option>
                 <option value="vendor_pending">Vendor adapter — not configured</option>
               </select>
-              <small>Live CHI automation remains unconfigured until the vendor interface is verified.</small>
+              <small>The bridge is local to the instrument PC. Live CHI commands remain gated until the vendor interface is verified.</small>
             </label>
           </div>
+          <section class="bridge-panel" aria-labelledby="bridge-heading">
+            <div class="bridge-heading">
+              <div>
+                <p class="eyebrow">LOCAL INSTRUMENT BRIDGE</p>
+                <h3 id="bridge-heading">Connect this browser to the instrument computer</h3>
+              </div>
+              <button class="button ghost compact-button" id="refresh-bridge-button" type="button">Check bridge</button>
+            </div>
+            <div class="bridge-grid">
+              <div class="bridge-item">
+                <span class="bridge-label">Bridge</span>
+                <strong id="bridge-state"><span class="status-dot amber"></span>Not connected</strong>
+                <small id="bridge-detail">Double-click <em>Start SpectraLoop.cmd</em> on the instrument computer.</small>
+              </div>
+              <div class="bridge-item">
+                <span class="bridge-label">Data folder</span>
+                <strong id="storage-state">Not selected</strong>
+                <small id="storage-detail">Choose a folder using the normal Windows folder picker.</small>
+                <button class="button secondary compact-button" id="select-storage-button" type="button" disabled>Choose storage folder</button>
+              </div>
+              <div class="bridge-item">
+                <span class="bridge-label">CHI 760E adapter</span>
+                <strong id="instrument-state">Not checked</strong>
+                <small id="instrument-detail">Experiment control is disabled unless a verified local adapter reports ready.</small>
+              </div>
+            </div>
+            <fieldset class="identity-confirmations" id="identity-confirmations" disabled>
+              <legend>Required before a read-only identity check</legend>
+              <label><input type="checkbox" data-confirmation="identity_only" /> This request is identity-only; do not run an experiment.</label>
+              <label><input type="checkbox" data-confirmation="no_sample_connected" /> No sample or electrochemical cell is connected.</label>
+              <label><input type="checkbox" data-confirmation="electrode_leads_safe" /> Electrode leads are disconnected or otherwise safe.</label>
+              <label><input type="checkbox" data-confirmation="cell_output_off" /> The CHI cell output is off.</label>
+            </fieldset>
+            <div class="bridge-actions">
+              <button class="button primary" id="discover-instrument-button" type="button" disabled>Read instrument identity</button>
+              <p id="bridge-action-status" class="card-note" role="status" aria-live="polite">No hardware request has been made. Windows will ask again before a future identity call.</p>
+            </div>
+            <aside class="safety-callout bridge-lock-note">
+              <strong>Experiment controls remain locked.</strong>
+              The web bridge currently permits storage selection and a future verified identity-only handshake. It cannot start CV, CA, EIS, cell control, Raman, laser, RDE, or automated decisions.
+            </aside>
+          </section>
           <section class="capability-card" aria-live="polite">
             <div>
               <p class="eyebrow">PROFILE CAPABILITIES</p>
@@ -231,6 +274,7 @@
         </footer>
       </form>
     </main>
-    <script src="app.js"></script>
+    <script src="bridge-client.js?v=local-bridge-1"></script>
+    <script src="app.js?v=local-bridge-1"></script>
   </body>
 </html>

@@ -13,7 +13,7 @@ const capabilityProfiles = {
 const allTechniques = ["CV", "i-t", "CA", "SWV", "EIS", "IMPE", "OCP", "STEP", "ISTEP/CPCS", "Chronocoulometry (CC) = ∫I dt from CA", "LSV", "GEIS", "iR compensation"];
 const defaultFormState = {
   chiModel: "760E",
-  chiBackend: "mock",
+  chiBackend: "local_bridge",
   ramanBackend: "mock",
   exposure: "0.1",
   accumulations: "1",
@@ -36,6 +36,21 @@ const preview = document.querySelector("#config-preview");
 const targetField = document.querySelector("#target-field");
 const tabs = document.querySelectorAll(".tab");
 const sections = document.querySelectorAll(".setup-section");
+const bridgeSummary = document.querySelector("#bridge-summary");
+const bridgeStateElement = document.querySelector("#bridge-state");
+const bridgeDetail = document.querySelector("#bridge-detail");
+const storageState = document.querySelector("#storage-state");
+const storageDetail = document.querySelector("#storage-detail");
+const instrumentState = document.querySelector("#instrument-state");
+const instrumentDetail = document.querySelector("#instrument-detail");
+const storageButton = document.querySelector("#select-storage-button");
+const refreshBridgeButton = document.querySelector("#refresh-bridge-button");
+const discoveryButton = document.querySelector("#discover-instrument-button");
+const confirmationFieldset = document.querySelector("#identity-confirmations");
+const confirmationInputs = Array.from(document.querySelectorAll("[data-confirmation]"));
+const bridgeActionStatus = document.querySelector("#bridge-action-status");
+let bridgeClient = null;
+let bridgeSnapshot = null;
 
 function readForm() {
   return Object.fromEntries(fieldIds.map((id) => [id, document.querySelector(`#${toKebab(id)}`).value]));
@@ -55,8 +70,8 @@ function buildConfiguration() {
   return {
     application: {
       name: "SpectraLoop - Adaptive Operando Raman Electrochemistry and Decision Automation Platform",
-      schema_version: "0.1",
-      mode: "configuration_only",
+      schema_version: "0.2",
+      mode: "local_bridge_ready_configuration",
       generated_at: new Date().toISOString(),
     },
     potentiostat: {
@@ -64,8 +79,17 @@ function buildConfiguration() {
       model: state.chiModel,
       backend: state.chiBackend,
       connection_enabled: false,
+      identity_connection_enabled: state.chiBackend === "local_bridge"
+        && Boolean(bridgeSnapshot?.instrument?.discovery_enabled),
+      experiment_control_enabled: false,
       automation_capabilities: capabilityProfiles[state.chiModel],
       live_capabilities_verified: false,
+    },
+    storage: {
+      managed_by: "local_bridge",
+      configured: Boolean(bridgeSnapshot?.storage?.configured),
+      available: Boolean(bridgeSnapshot?.storage?.available),
+      folder_name: bridgeSnapshot?.storage?.folder_name || null,
     },
     raman: {
       backend: state.ramanBackend,
@@ -147,6 +171,147 @@ function refreshPreview() {
   preview.textContent = JSON.stringify(buildConfiguration(), null, 2);
 }
 
+function statusDot(kind) {
+  const dot = document.createElement("span");
+  dot.className = `status-dot ${kind}`;
+  return dot;
+}
+
+function setLabeledStatus(element, text, kind) {
+  element.replaceChildren(statusDot(kind), document.createTextNode(text));
+}
+
+function selectedConfirmations() {
+  return Object.fromEntries(
+    confirmationInputs.map((input) => [input.dataset.confirmation, input.checked]),
+  );
+}
+
+function updateDiscoveryButton() {
+  const allConfirmed = confirmationInputs.every((input) => input.checked);
+  discoveryButton.disabled = !bridgeClient
+    || !bridgeSnapshot?.instrument?.discovery_enabled
+    || !allConfirmed;
+}
+
+function showBridgeUnavailable(message) {
+  bridgeSnapshot = null;
+  setLabeledStatus(bridgeStateElement, "Not connected", "amber");
+  bridgeDetail.textContent = message;
+  storageState.textContent = "Unavailable";
+  storageDetail.textContent = "Start the local bridge before choosing a folder.";
+  instrumentState.textContent = "Unavailable";
+  instrumentDetail.textContent = "No instrument request was made.";
+  setLabeledStatus(bridgeSummary, "Local bridge not connected", "amber");
+  storageButton.disabled = true;
+  confirmationFieldset.disabled = true;
+  updateDiscoveryButton();
+  refreshPreview();
+}
+
+function renderBridgeStatus(snapshot) {
+  bridgeSnapshot = snapshot;
+  setLabeledStatus(bridgeStateElement, "Connected locally", "safe");
+  bridgeDetail.textContent = `${snapshot.service.name} ${snapshot.service.version} · loopback only`;
+  setLabeledStatus(bridgeSummary, "Local bridge connected", "safe");
+  storageButton.disabled = false;
+
+  if (snapshot.storage.configured) {
+    storageState.textContent = snapshot.storage.available
+      ? snapshot.storage.folder_name
+      : `${snapshot.storage.folder_name} (unavailable)`;
+    storageDetail.textContent = snapshot.storage.available
+      ? "The full path stays in the local bridge and is not exposed to the public site."
+      : "Choose an available folder before saving experiment data.";
+  } else {
+    storageState.textContent = "Not selected";
+    storageDetail.textContent = "Choose a folder using the normal Windows folder picker.";
+  }
+
+  const instrument = snapshot.instrument;
+  if (instrument.discovery_enabled) {
+    instrumentState.textContent = `${instrument.target} · identity check ready`;
+    instrumentDetail.textContent = "Only the verified read-only identity sequence is available.";
+    confirmationFieldset.disabled = false;
+  } else {
+    instrumentState.textContent = `${instrument.target} · adapter unavailable`;
+    instrumentDetail.textContent = instrument.blocker || "A verified local adapter is required.";
+    confirmationFieldset.disabled = true;
+  }
+  updateDiscoveryButton();
+  refreshPreview();
+}
+
+function bridgeBaseUrl() {
+  return window.location.hostname === "127.0.0.1"
+    ? window.location.origin
+    : SpectraLoopBridge.DEFAULT_BRIDGE_URL;
+}
+
+async function refreshBridgeStatus() {
+  if (typeof SpectraLoopBridge === "undefined") {
+    bridgeClient = null;
+    showBridgeUnavailable("The local bridge client did not load. Refresh this page after the site update is deployed.");
+    return;
+  }
+  const token = SpectraLoopBridge.consumeBridgeToken();
+  if (!token) {
+    bridgeClient = null;
+    showBridgeUnavailable("Double-click Start SpectraLoop.cmd on the instrument computer, then use the page it opens.");
+    return;
+  }
+  try {
+    bridgeClient = new SpectraLoopBridge.BridgeClient({ token, baseUrl: bridgeBaseUrl() });
+    renderBridgeStatus(await bridgeClient.status());
+    bridgeActionStatus.textContent = "Bridge verified. No hardware request has been made.";
+    bridgeActionStatus.style.color = "var(--safe)";
+  } catch (error) {
+    bridgeClient = null;
+    showBridgeUnavailable(error.message);
+    bridgeActionStatus.textContent = error.message;
+    bridgeActionStatus.style.color = "var(--danger)";
+  }
+}
+
+async function selectStorageFolder() {
+  if (!bridgeClient) return;
+  storageButton.disabled = true;
+  bridgeActionStatus.textContent = "Waiting for the Windows folder picker…";
+  bridgeActionStatus.style.color = "var(--muted)";
+  try {
+    const result = await bridgeClient.selectStorageFolder();
+    if (result.storage.cancelled) {
+      bridgeActionStatus.textContent = "Folder selection cancelled; the previous setting was preserved.";
+    } else {
+      bridgeActionStatus.textContent = `Data folder selected: ${result.storage.folder_name}.`;
+      bridgeActionStatus.style.color = "var(--safe)";
+    }
+    renderBridgeStatus(await bridgeClient.status());
+  } catch (error) {
+    bridgeActionStatus.textContent = error.message;
+    bridgeActionStatus.style.color = "var(--danger)";
+    storageButton.disabled = false;
+  }
+}
+
+async function discoverInstrumentIdentity() {
+  if (!bridgeClient || discoveryButton.disabled) return;
+  discoveryButton.disabled = true;
+  bridgeActionStatus.textContent = "Running the identity-only discovery sequence…";
+  bridgeActionStatus.style.color = "var(--warning)";
+  try {
+    const result = await bridgeClient.discoverInstrument(selectedConfirmations());
+    const identity = result.discovery.identity;
+    bridgeActionStatus.textContent = `Verified ${identity.model}; serial ${identity.serial_number}; firmware ${identity.firmware_version}.`;
+    bridgeActionStatus.style.color = "var(--safe)";
+    renderBridgeStatus(await bridgeClient.status());
+  } catch (error) {
+    bridgeActionStatus.textContent = error.message;
+    bridgeActionStatus.style.color = "var(--danger)";
+    updateDiscoveryButton();
+  }
+}
+
 function openSection(targetId) {
   sections.forEach((section) => {
     const active = section.id === targetId;
@@ -166,7 +331,7 @@ function storeSetup() {
   }
   const setup = buildConfiguration();
   localStorage.setItem("spectraloop-setup", JSON.stringify(setup));
-  formStatus.textContent = "Setup saved locally in this browser. No hardware was contacted.";
+  formStatus.textContent = "Setup saved in this browser. Instrument and storage settings remain managed by the local bridge.";
   formStatus.style.color = "var(--safe)";
   return setup;
 }
@@ -191,7 +356,7 @@ function restoreDefaults() {
   refreshCapabilities();
   refreshTaskFields();
   refreshPreview();
-  formStatus.textContent = "Defaults restored. Offline mode remains active.";
+  formStatus.textContent = "Defaults restored. Hardware safety gates remain active.";
   formStatus.style.color = "var(--muted)";
 }
 
@@ -202,7 +367,12 @@ fieldIds.forEach((id) => document.querySelector(`#${toKebab(id)}`).addEventListe
 document.querySelector("#save-button").addEventListener("click", storeSetup);
 document.querySelector("#export-button").addEventListener("click", exportSetup);
 document.querySelector("#reset-button").addEventListener("click", restoreDefaults);
+refreshBridgeButton.addEventListener("click", refreshBridgeStatus);
+storageButton.addEventListener("click", selectStorageFolder);
+discoveryButton.addEventListener("click", discoverInstrumentIdentity);
+confirmationInputs.forEach((input) => input.addEventListener("change", updateDiscoveryButton));
 
 refreshCapabilities();
 refreshTaskFields();
 refreshPreview();
+refreshBridgeStatus();

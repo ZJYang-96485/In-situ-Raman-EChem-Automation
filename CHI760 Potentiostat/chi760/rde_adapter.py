@@ -16,6 +16,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 from .profiles import Technique
+from .runtime_profile import ELECTROCHEMISTRY_ONLY, HardwareOperation
 from .ir_compensation import IRCompensationPlan, ir_plan_parameters, technique_uses_ir_compensation
 from .protocols import EchemProtocol, ProtocolAction, ProtocolStep
 
@@ -99,6 +100,15 @@ TECHNIQUE_ADAPTATIONS: Mapping[str, TechniqueAdaptation] = MappingProxyType(
         ),
     }
 )
+
+
+def request_rde_hardware_control() -> None:
+    """Reject optional disk-RDE motor control before any controller call."""
+
+    ELECTROCHEMISTRY_ONLY.require(
+        HardwareOperation.RDE_MOTOR_CONTROL,
+        "RDE motor control",
+    )
 
 
 def adapt_rde_protocol(

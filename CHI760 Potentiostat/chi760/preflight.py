@@ -32,12 +32,25 @@ class SDKCandidateInspection:
     error: str | None
 
     @property
+    def candidate_kind(self) -> str:
+        suffix = Path(self.path).suffix.lower()
+        if suffix == ".dll":
+            return "dynamic_library"
+        if suffix == ".exe":
+            return "desktop_executable"
+        return "other"
+
+    @property
     def is_32_bit_windows_pe(self) -> bool:
         return (
             self.file_format == "PE"
             and self.architecture == "x86"
             and self.bitness == 32
         )
+
+    @property
+    def is_32_bit_windows_dll(self) -> bool:
+        return self.candidate_kind == "dynamic_library" and self.is_32_bit_windows_pe
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -49,7 +62,9 @@ class SDKCandidateInspection:
             "architecture": self.architecture,
             "bitness": self.bitness,
             "exported_symbols": list(self.exported_symbols),
+            "candidate_kind": self.candidate_kind,
             "is_32_bit_windows_pe": self.is_32_bit_windows_pe,
+            "is_32_bit_windows_dll": self.is_32_bit_windows_dll,
             "error": self.error,
         }
 
@@ -144,7 +159,7 @@ def run_connection_preflight(
         status = "inspection_failed"
     elif missing:
         status = "required_exports_missing"
-    elif not any(candidate.is_32_bit_windows_pe for candidate in candidates):
+    elif not any(candidate.is_32_bit_windows_dll for candidate in candidates):
         status = "documented_32_bit_library_not_found"
     else:
         status = "inspection_complete_mapping_required"
@@ -158,7 +173,7 @@ def run_connection_preflight(
         host_can_load_documented_libec=(
             host_system == "Windows"
             and host_python_bitness == 32
-            and any(candidate.is_32_bit_windows_pe for candidate in candidates)
+            and any(candidate.is_32_bit_windows_dll for candidate in candidates)
         ),
         sdk_loaded=False,
         device_contacted=False,

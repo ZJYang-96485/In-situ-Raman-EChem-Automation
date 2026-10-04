@@ -214,6 +214,23 @@ def sdk_mapping_manifest() -> dict[str, object]:
         "schema_version": "0.1",
         "target_model": "760E",
         "source": "public CH Instruments libec 7xxE technique matrix",
+        "installed_vendor_evidence": {
+            "software_version": None,
+            "executable_interface": "desktop command-line macro runner",
+            "evidence": "installed chi760e.chm: hidd_dialog_macro.htm",
+            "documented_example_executable": "chi660e.exe",
+            "chi760e_invocation_verified": False,
+            "read_only_identity_query": None,
+            "read_only_capability_query": None,
+            "connect_identifier": None,
+            "disconnect_identifier": None,
+            "notes": (
+                "The installed help documents experiment macros, including cell, "
+                "trigger, and RDE commands. It does not document a non-energizing "
+                "760E identity handshake, so no macro is invoked. Installed paths, "
+                "versions, and hashes are supplied at runtime and kept out of code."
+            ),
+        },
         "techniques": {
             technique.value: mapping.as_dict()
             for technique, mapping in CHI760E_TECHNIQUE_MAPPINGS.items()

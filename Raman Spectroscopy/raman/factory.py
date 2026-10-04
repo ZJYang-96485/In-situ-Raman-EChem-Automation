@@ -22,6 +22,7 @@ def create_raman_backend(configuration: RamanConfiguration) -> RamanBackend:
         return AndorSolisBackend(
             configuration.hardware,
             connection_enabled=configuration.connection_enabled,
+            electrochemistry_only=True,
         )
     raise ValueError(f"unsupported Raman backend: {configuration.backend}")
 
@@ -32,4 +33,5 @@ def create_raman_controller(configuration: RamanConfiguration) -> RamanControlle
     return RamanController(
         create_raman_backend(configuration),
         live_connection_enabled=configuration.connection_enabled,
+        electrochemistry_only=True,
     )

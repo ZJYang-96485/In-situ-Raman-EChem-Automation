@@ -18,7 +18,9 @@ class RamanBackend(Protocol):
     """
 
     is_simulated: bool
-    hardware_verified: bool
+
+    @property
+    def hardware_verified(self) -> bool: ...
 
     def connect(self) -> InstrumentIdentity:
         """Open a connection and return the detected instrument identity."""

@@ -48,7 +48,11 @@ class DisconnectFailureBackend:
 class RamanConnectionStateTests(unittest.TestCase):
     def test_connect_failure_attempts_cleanup(self):
         backend = ConnectFailureBackend()
-        controller = RamanController(backend, live_connection_enabled=True)
+        controller = RamanController(
+            backend,
+            live_connection_enabled=True,
+            electrochemistry_only=False,
+        )
 
         with self.assertRaisesRegex(RuntimeError, "partial connection"):
             controller.connect()
@@ -59,7 +63,9 @@ class RamanConnectionStateTests(unittest.TestCase):
 
     def test_disconnect_failure_marks_connection_state_unknown(self):
         controller = RamanController(
-            DisconnectFailureBackend(), live_connection_enabled=True
+            DisconnectFailureBackend(),
+            live_connection_enabled=True,
+            electrochemistry_only=False,
         )
         controller.connect()
 
