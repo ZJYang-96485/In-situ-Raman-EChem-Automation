@@ -1,7 +1,13 @@
 """Flexible CH Instruments 760-series potentiostat automation interfaces."""
 
+from .backend import CHI760Backend
 from .controller import CHI760BController, CHI760Controller
-from .errors import UnsupportedTechniqueError
+from .dry_run_backend import DryRunCHI760E
+from .errors import (
+    BackendStateError,
+    LiveExecutionUnavailableError,
+    UnsupportedTechniqueError,
+)
 from .mock_backend import MockCHI760, MockCHI760B
 from .models import (
     CAParameters,
@@ -42,9 +48,37 @@ from .protocols import (
     build_rde_protocol,
 )
 from .profiles import CHI760Model, CHI760Profile, Technique, profile_for
+from .preflight import (
+    PreflightReport,
+    SDKCandidateInspection,
+    inspect_sdk_candidate,
+    run_connection_preflight,
+)
+from .sdk_mapping import (
+    CHI760E_DERIVED_OUTPUTS,
+    CHI760E_IR_MAPPING,
+    CHI760E_TECHNIQUE_MAPPINGS,
+    CHI760E_UNVERIFIED_TECHNIQUE_MAPPINGS,
+    IRSDKMapping,
+    MappingStatus,
+    TechniqueSDKMapping,
+    mapping_for,
+    sdk_mapping_manifest,
+    unresolved_live_bindings,
+)
+from .trace import (
+    CommandTrace,
+    TraceEvent,
+    TraceMismatchError,
+    TraceReplayBackend,
+    TraceValidationError,
+    load_trace,
+    validate_trace_payload,
+)
 
 __all__ = [
     "CHI760BController",
+    "CHI760Backend",
     "CHI760Controller",
     "CHI760Model",
     "CHI760Profile",
@@ -52,36 +86,60 @@ __all__ = [
     "CAParameters",
     "CVParameters",
     "CurrentStep",
+    "DryRunCHI760E",
     "EchemProtocol",
     "EISParameters",
     "IMPEParameters",
     "IRCompensationMode",
     "IRCompensationPlan",
     "IRCompensationProgress",
+    "IRSDKMapping",
     "ISTEPParameters",
     "ITParameters",
     "LSVParameters",
     "MockCHI760",
     "MockCHI760B",
+    "MappingStatus",
     "OCPParameters",
     "PotentialStep",
     "ProtocolAction",
     "ProtocolAdaptation",
     "ProtocolStep",
+    "PreflightReport",
     "RDEExperiment",
     "RamanSyncPolicy",
     "RuValidationResult",
     "STEPParameters",
     "SWVParameters",
+    "SDKCandidateInspection",
     "Technique",
     "TechniqueAdaptation",
+    "TechniqueSDKMapping",
+    "TraceEvent",
+    "TraceMismatchError",
+    "TraceReplayBackend",
+    "TraceValidationError",
+    "CommandTrace",
+    "BackendStateError",
+    "LiveExecutionUnavailableError",
     "UnsupportedTechniqueError",
+    "CHI760E_IR_MAPPING",
+    "CHI760E_DERIVED_OUTPUTS",
+    "CHI760E_TECHNIQUE_MAPPINGS",
+    "CHI760E_UNVERIFIED_TECHNIQUE_MAPPINGS",
     "build_rde_protocol",
     "adapt_rde_protocol",
     "cumulative_charge_C",
     "chronocoulometry_from_ca_C",
     "evaluate_compensation_trials",
+    "inspect_sdk_candidate",
+    "load_trace",
+    "mapping_for",
     "profile_for",
     "technique_uses_ir_compensation",
+    "run_connection_preflight",
+    "sdk_mapping_manifest",
+    "unresolved_live_bindings",
+    "validate_trace_payload",
     "validate_ru_measurements",
 ]

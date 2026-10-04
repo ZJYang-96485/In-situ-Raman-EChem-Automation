@@ -15,8 +15,8 @@ written permission from the copyright holder.
 
 The controller and parameter models live in
 [`CHI760 Potentiostat/chi760`](CHI760%20Potentiostat/chi760). The included
-`MockCHI760` backend exercises the automation workflow without connecting to
-an instrument. Select `760B`, `760C`, `760D`, or `760E` when creating
+`MockCHI760` and the traceable `DryRunCHI760E` backend exercise the automation
+workflow without connecting to an instrument. Select `760B`, `760C`, `760D`, or `760E` when creating
 `CHI760Controller`; each profile gates the techniques that this project exposes.
 This repository does not yet include a live hardware driver.
 
@@ -34,6 +34,13 @@ A production backend, including the exact automatic iR-compensation parameter
 mapping and readback, must be implemented and validated against the
 vendor-supported CHI 760 interface before it is used with hardware. It must
 be validated separately for every selected model profile.
+
+The current connection boundary keeps all unverified vendor entry points and
+parameter identifiers unresolved. On macOS it can inspect copied SDK DLLs
+without loading them, exercise all nine profiled 760E libec technique paths and
+the iR policy with zero hardware calls, save the command trace, and replay it
+while rejecting parameter drift.
+See the [CHI 760E module guide](CHI760%20Potentiostat/README.md#connection-free-backend-and-mac-checks).
 
 Example:
 

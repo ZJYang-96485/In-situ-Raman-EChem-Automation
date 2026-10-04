@@ -17,15 +17,15 @@ Instruments libec matrix:
 
 | Project name | Public libec name | Status in this repository |
 | --- | --- | --- |
-| CV | CV | Profiled; mock only |
-| Amperometric i-t | i-t | Profiled; mock only |
-| Chronoamperometry | CA | Profiled; mock only |
-| Square-wave voltammetry | SWV | Profiled; mock only |
-| Potentiostatic EIS | IMP | Profiled; mock only |
-| Impedance versus potential | IMPE | Profiled; mock only |
-| Open-circuit potential | OCPT | Profiled; mock only |
-| Multi-potential steps | STEP | Profiled; mock only |
-| Current steps / chronopotentiometry | ISTEP/CPCS | Profiled; mock only |
+| CV | CV | Profiled; mock and zero-hardware dry run |
+| Amperometric i-t | i-t | Profiled; mock and zero-hardware dry run |
+| Chronoamperometry | CA | Profiled; mock and zero-hardware dry run |
+| Square-wave voltammetry | SWV | Profiled; mock and zero-hardware dry run |
+| Potentiostatic EIS | IMP | Profiled; mock and zero-hardware dry run |
+| Impedance versus potential | IMPE | Profiled; mock and zero-hardware dry run |
+| Open-circuit potential | OCPT | Profiled; mock and zero-hardware dry run |
+| Multi-potential steps | STEP | Profiled; mock and zero-hardware dry run |
+| Current steps / chronopotentiometry | ISTEP/CPCS | Profiled; mock and zero-hardware dry run |
 | Chronocoulometry (CC) | CA + integration of current over time | Derived locally; no separate CC capability claimed |
 | LSV | LSV in the desktop workflow | Not listed for 7xxE in the public libec matrix |
 | Galvanostatic EIS | IMP mode | Installed-SDK verification required |
@@ -77,19 +77,51 @@ a 95% compensation target. Trials 1–9 stop when the target is confirmed; at th
 uses the configured failure/fallback policy. Cleanup always disables
 compensation.
 
-The 95% target and 10-trial ceiling are the current user-defined policy. Other
-numerical preparation defaults are copied from the referenced RDE project for
-editability and parity. Live use remains unapproved until the chemistry is
-reviewed and the settings are mapped to the installed CHI interface.
+The 95% target and 10-trial ceiling are the default policy. Other numerical
+preparation defaults are copied from the referenced RDE project for editability
+and parity. General electrochemistry limits are supplied by the global protocol
+configuration; the installed CHI interface still has to establish the exact
+write, readback, disable, and cell-off bindings.
 
 This is a plan, not working 760E control. Positive-feedback, current-interrupt,
-and automatic mode names are requested strategies only. The installed CHI SDK
-must first confirm which modes and parameter identifiers are actually available.
-Live execution stays disabled until a parameter write and readback test passes
-on an approved test cell.
+and automatic mode names describe the requested strategies. The exact
+automation identifiers will be populated from the installed CHI SDK, then the
+first connected smoke test will verify parameter write, readback, and cleanup
+on a dummy/test setup.
 
 See [the pre-connection checklist](docs/pre-connection-checklist.md) for the
 information and acceptance tests needed before a live adapter can be enabled.
+
+## Connection-free backend and Mac checks
+
+`DryRunCHI760E` implements the same controller boundary without loading a
+vendor library or contacting a device. It records every intended operation in a
+JSON-safe trace, reports zero hardware calls, and supports exact replay that
+rejects command or parameter drift.
+
+Run these commands from this directory on macOS:
+
+```sh
+python -m chi760 mapping
+python -m chi760 preflight
+python -m chi760 dry-run-smoke --output /tmp/chi760e-dry-run.json
+python -m chi760 replay /tmp/chi760e-dry-run.json
+```
+
+`mapping` shows unresolved vendor entry points and parameter identifiers.
+`preflight` is read-only: when SDK files are supplied, it hashes them and parses
+Windows PE architecture and export names without loading a DLL. `dry-run-smoke`
+exercises all nine currently profiled 760E libec technique paths, the
+95%/10-trial iR policy, compensation disable, and cell-off planning. It never
+performs a device call. LSV remains desktop-only, GEIS remains an unresolved
+installed-SDK item, and the optional disk RDE requires a separate controller.
+`replay` validates the trace schema, UTC and monotonic timestamps, finite numeric
+values, operation order, and every recorded parameter before reporting success.
+
+When the installed 760E package is available, copy only the relevant SDK DLLs,
+headers, and matching vendor documentation to an inspection location and pass
+the DLL paths to `preflight`. Do not guess `--required-export` names; add those
+only after an installed header, sample, or manual identifies them.
 
 ## Tests
 
@@ -97,4 +129,5 @@ Run from this directory:
 
 ```sh
 python -B -m unittest discover -s tests -v
+python -m mypy chi760 tests
 ```

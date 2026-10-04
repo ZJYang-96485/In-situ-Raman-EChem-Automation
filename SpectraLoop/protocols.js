@@ -332,8 +332,6 @@ function buildPlan() {
       ru_settle_s: inputNumber("ir-ru-settle"),
       continue_without_ir_on_ru_failure: document.querySelector("#ir-fallback").checked,
       require_parameter_readback: true,
-      starting_policy_confirmed: true,
-      live_use_approved: false,
       parameter_origin: "user-defined 95%/10-trial policy; remaining preparation defaults adapted from ZJYang-96485/RDE",
       prepare_each_eligible_trial: true,
       cleanup: "disable_ir_compensation_and_cell_off",

@@ -48,8 +48,6 @@ class IRCompensationPlan:
     ru_settle_s: float = 0.5
     continue_without_ir_on_ru_failure: bool = True
     require_parameter_readback: bool = True
-    starting_policy_confirmed: bool = True
-    live_use_approved: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, IRCompensationMode):
@@ -87,8 +85,6 @@ class IRCompensationPlan:
             "enabled",
             "continue_without_ir_on_ru_failure",
             "require_parameter_readback",
-            "starting_policy_confirmed",
-            "live_use_approved",
         ):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"{name} must be a boolean")
@@ -273,8 +269,6 @@ def ir_plan_parameters(plan: IRCompensationPlan) -> dict[str, object]:
         "ru_settle_s": plan.ru_settle_s,
         "continue_without_ir_on_ru_failure": plan.continue_without_ir_on_ru_failure,
         "require_parameter_readback": plan.require_parameter_readback,
-        "starting_policy_confirmed": plan.starting_policy_confirmed,
-        "live_use_approved": plan.live_use_approved,
         "parameter_origin": "user-defined 95%/10-trial policy; remaining preparation defaults adapted from ZJYang-96485/RDE",
         "requested_mode_not_hardware_confirmed": True,
         "requires_installed_sdk_parameter_discovery": True,

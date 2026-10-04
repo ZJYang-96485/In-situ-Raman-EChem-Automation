@@ -1,5 +1,6 @@
 """Model-profiled control surface for CH Instruments 760-series automation."""
 
+from .backend import CHI760Backend
 from .errors import UnsupportedTechniqueError
 from .models import (
     CAParameters,
@@ -21,7 +22,7 @@ class CHI760Controller:
 
     def __init__(
         self,
-        backend,
+        backend: CHI760Backend,
         model: CHI760Model | str = CHI760Model.B,
     ):
         self.backend = backend

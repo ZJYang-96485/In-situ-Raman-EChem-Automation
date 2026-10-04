@@ -179,12 +179,12 @@ class CHI760EProtocolTests(unittest.TestCase):
         self.assertAlmostEqual(12.2, result.selected_ohm)
         self.assertAlmostEqual(11.59, result.requested_compensation_ohm)
 
-    def test_ir_defaults_are_confirmed_starting_policy_not_live_approval(self):
+    def test_ir_strategy_is_the_default_without_review_metadata(self):
         plan = IRCompensationPlan()
-        self.assertTrue(plan.starting_policy_confirmed)
-        self.assertFalse(plan.live_use_approved)
         self.assertEqual(0.95, plan.target_compensation_fraction)
         self.assertEqual(10, plan.max_compensation_trials)
+        self.assertNotIn("starting_policy_confirmed", vars(plan))
+        self.assertNotIn("live_use_approved", vars(plan))
 
     def test_ir_loop_stops_when_95_percent_is_confirmed(self):
         result = evaluate_compensation_trials(

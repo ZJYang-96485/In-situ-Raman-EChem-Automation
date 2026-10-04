@@ -12,6 +12,10 @@ a Raman laser.
 - Generate CA voltage ranges and RDE speed schedules.
 - Derive chronocoulometry (CC) by integrating CA current over time.
 - Test Ru retry, range, repeatability, fallback, and cleanup logic with mock data.
+- Run all nine profiled 760E libec technique paths plus the iR policy and replay
+  the exact command trace with an asserted hardware-call count of zero.
+- Hash candidate SDK files and inspect their PE architecture and exported names
+  without loading a DLL or contacting a device.
 - Exercise synchronized-screen behavior with simulated timestamps.
 - Export provenance-rich protocol and data JSON.
 
@@ -44,14 +48,20 @@ Before automatic iR compensation can be enabled, confirm all of the following:
    documented confirmation is available.
 5. Failed measurement, failed write, failed readback, abort, and disconnect all
    lead to compensation disable and a safe cell state.
-6. The current 95% target, acceptance of the 10th trial's valid value, fresh Ru
-   policy, retry count, repeatability threshold, and invalid-final-value fallback
-   are approved for the chemistry.
-7. Tests pass first with a vendor-recommended dummy/test cell and conservative
-   limits, then with an approved experimental cell.
+6. The fixed default policy is preserved: test trials in order, stop when 95% is
+   confirmed, and otherwise accept the 10th trial's valid value. Global
+   electrochemistry limits remain external configuration.
+7. When lab access is available, verify the mapped operations first with an
+   appropriate dummy/test cell, then with the intended experimental setup.
 
 Record every Ru attempt, rejected value, selected Ru, requested compensated Ru,
 readback, mode, timestamp, and fallback/abort decision.
+
+Items 1–5 can be checked automatically against supplied installed-SDK artifacts
+and later against a connected test setup. The current Mac checks validate the
+automation logic and inspect files only; they do not claim that a vendor symbol
+exists or that a setting was written or read back. Item 7 necessarily waits for
+lab access.
 
 ## Optional disk-only RDE and Raman information still needed
 
