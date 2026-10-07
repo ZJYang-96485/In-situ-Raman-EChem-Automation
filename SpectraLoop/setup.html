@@ -107,19 +107,19 @@
               </div>
             </div>
             <fieldset class="identity-confirmations" id="identity-confirmations" disabled>
-              <legend>Required before a read-only identity check</legend>
-              <label><input type="checkbox" data-confirmation="identity_only" /> This request is identity-only; do not run an experiment.</label>
+              <legend>Required before a read-only SDK capability check</legend>
+              <label><input type="checkbox" data-confirmation="identity_only" /> This request checks SDK metadata only; do not run an experiment.</label>
               <label><input type="checkbox" data-confirmation="no_sample_connected" /> No sample or electrochemical cell is connected.</label>
               <label><input type="checkbox" data-confirmation="electrode_leads_safe" /> Electrode leads are disconnected or otherwise safe.</label>
               <label><input type="checkbox" data-confirmation="cell_output_off" /> The CHI cell output is off.</label>
             </fieldset>
             <div class="bridge-actions">
-              <button class="button primary" id="discover-instrument-button" type="button" disabled>Read instrument identity</button>
-              <p id="bridge-action-status" class="card-note" role="status" aria-live="polite">No hardware request has been made. Windows will ask again before a future identity call.</p>
+              <button class="button primary" id="discover-instrument-button" type="button" disabled>Check CHI SDK capabilities</button>
+              <p id="bridge-action-status" class="card-note" role="status" aria-live="polite">No hardware request has been made. Windows will ask again before an SDK capability call.</p>
             </div>
             <aside class="safety-callout bridge-lock-note">
               <strong>Experiment controls remain locked.</strong>
-              The web bridge currently permits storage selection and a future verified identity-only handshake. It cannot start CV, CA, EIS, cell control, Raman, laser, RDE, or automated decisions.
+              The web bridge currently permits storage selection and a read-only SDK capability check. It cannot start CV, CA, EIS, cell control, Raman, laser, RDE, or automated decisions, and it does not yet verify physical instrument identity.
             </aside>
           </section>
           <section class="capability-card" aria-live="polite">
@@ -274,7 +274,7 @@
         </footer>
       </form>
     </main>
-    <script src="bridge-client.js?v=bridge-session-3"></script>
-    <script src="app.js?v=bridge-session-3"></script>
+    <script src="bridge-client.js?v=bridge-session-4"></script>
+    <script src="app.js?v=bridge-session-4"></script>
   </body>
 </html>

@@ -7,8 +7,8 @@ const { describeSnapshot } = require("./echem-bridge.js");
 
 test("electrochemistry page exposes bridge, storage, and identity controls", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
-  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-3");
-  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-3");
+  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-4");
+  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-4");
 
   assert.match(html, /id="echem-bridge-summary"/);
   assert.match(html, /id="echem-bridge-check-status"/);
@@ -36,14 +36,14 @@ test("unavailable adapter is visibly different from a disconnected bridge", () =
   assert.equal(view.discoveryEnabled, false);
 });
 
-test("ready adapter enables identity only, never experiment execution", () => {
+test("ready worker enables SDK inspection only, never experiment execution", () => {
   const view = describeSnapshot({
     storage: { configured: false, available: false, folder_name: null },
-    instrument: { target: "CHI 760E", discovery_enabled: true },
+    instrument: { target: "CHI 760E SDK", discovery_enabled: true },
   });
 
-  assert.equal(view.header, "Local bridge connected · identity only");
-  assert.equal(view.instrumentLabel, "CHI 760E · identity check ready");
-  assert.match(view.instrumentDetail, /read-only identity/);
+  assert.equal(view.header, "Local bridge connected - SDK worker ready");
+  assert.equal(view.instrumentLabel, "CHI 760E SDK - SDK check ready");
+  assert.match(view.instrumentDetail, /physical instrument identity is not confirmed/);
   assert.equal(view.discoveryEnabled, true);
 });

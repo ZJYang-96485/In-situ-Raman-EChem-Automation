@@ -49,26 +49,26 @@
           <div class="bridge-item">
             <span class="bridge-label">Real CHI 760E</span>
             <strong id="echem-instrument-state">Not checked</strong>
-            <small id="echem-instrument-detail">A verified vendor adapter is required before identity discovery.</small>
+            <small id="echem-instrument-detail">A verified 32-bit worker is required before checking SDK capabilities.</small>
           </div>
         </div>
         <details class="bridge-discovery-details">
-          <summary>Read-only instrument identity check</summary>
+          <summary>Read-only CHI SDK capability check</summary>
           <fieldset class="identity-confirmations" id="echem-identity-confirmations" disabled>
             <legend>Confirm the physical bench state</legend>
-            <label><input type="checkbox" data-echem-confirmation="identity_only" /> Identity only; do not run an experiment.</label>
+            <label><input type="checkbox" data-echem-confirmation="identity_only" /> SDK check only; do not run an experiment.</label>
             <label><input type="checkbox" data-echem-confirmation="no_sample_connected" /> No sample or electrochemical cell is connected.</label>
             <label><input type="checkbox" data-echem-confirmation="electrode_leads_safe" /> Electrode leads are disconnected or safe.</label>
             <label><input type="checkbox" data-echem-confirmation="cell_output_off" /> CHI cell output is off.</label>
           </fieldset>
           <div class="bridge-actions">
-            <button class="button primary" id="echem-discover-instrument" type="button" disabled>Read instrument identity</button>
-            <p id="echem-bridge-action-status" class="card-note" role="status" aria-live="polite">No hardware request has been made. Windows will request separate approval before a future identity call.</p>
+            <button class="button primary" id="echem-discover-instrument" type="button" disabled>Check CHI SDK capabilities</button>
+            <p id="echem-bridge-action-status" class="card-note" role="status" aria-live="polite">No hardware request has been made. Windows will request separate approval before an SDK capability call.</p>
           </div>
         </details>
         <aside class="safety-callout bridge-lock-note">
           <strong>Protocol execution is still locked.</strong>
-          Connecting the bridge or reading identity does not authorize OCP, EIS, CV, iR compensation, cell control, Raman, RDE, or any other experiment.
+          Connecting the bridge or checking SDK capabilities does not authorize OCP, EIS, CV, iR compensation, cell control, Raman, RDE, or any other experiment.
         </aside>
       </section>
 
@@ -263,8 +263,8 @@
         <a href="setup.html">Experiment setup →</a>
       </footer>
     </main>
-    <script src="bridge-client.js?v=echem-bridge-3"></script>
-    <script src="echem-bridge.js?v=echem-bridge-3"></script>
+    <script src="bridge-client.js?v=echem-bridge-4"></script>
+    <script src="echem-bridge.js?v=echem-bridge-4"></script>
     <script src="protocols.js?v=echem-simulator-1"></script>
     <script src="smoke-test.js?v=echem-simulator-1"></script>
     <script src="simulator.js?v=echem-simulator-1"></script>

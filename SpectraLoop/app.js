@@ -230,8 +230,9 @@ function renderBridgeStatus(snapshot) {
 
   const instrument = snapshot.instrument;
   if (instrument.discovery_enabled) {
-    instrumentState.textContent = `${instrument.target} · identity check ready`;
-    instrumentDetail.textContent = "Only the verified read-only identity sequence is available.";
+    instrumentState.textContent = `${instrument.target} - SDK check ready`;
+    instrumentDetail.textContent = instrument.detail
+      || "The persistent worker is ready; physical instrument identity is not confirmed.";
     confirmationFieldset.disabled = false;
   } else {
     instrumentState.textContent = `${instrument.target} · adapter unavailable`;
@@ -302,12 +303,14 @@ async function selectStorageFolder() {
 async function discoverInstrumentIdentity() {
   if (!bridgeClient || discoveryButton.disabled) return;
   discoveryButton.disabled = true;
-  bridgeActionStatus.textContent = "Running the identity-only discovery sequence…";
+  bridgeActionStatus.textContent = "Running the read-only SDK capability check…";
   bridgeActionStatus.style.color = "var(--warning)";
   try {
     const result = await bridgeClient.discoverInstrument(selectedConfirmations());
     const identity = result.discovery.identity;
-    bridgeActionStatus.textContent = `Verified ${identity.model}; serial ${identity.serial_number}; firmware ${identity.firmware_version}.`;
+    bridgeActionStatus.textContent = result.discovery.physical_connection_confirmed
+      ? `Verified ${identity.model}; serial ${identity.serial_number}; firmware ${identity.firmware_version}.`
+      : `${identity.model} SDK capabilities read successfully; physical instrument identity is not confirmed.`;
     bridgeActionStatus.style.color = "var(--safe)";
     renderBridgeStatus(await bridgeClient.status());
   } catch (error) {

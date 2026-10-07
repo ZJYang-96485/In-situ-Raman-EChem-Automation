@@ -55,8 +55,8 @@ test("client sends bearer token only to fixed loopback bridge", async () => {
 
 test("setup page loads the authenticated bridge client before its UI controller", () => {
   const html = fs.readFileSync(path.join(__dirname, "setup.html"), "utf8");
-  const bridgePosition = html.indexOf('<script src="bridge-client.js?v=bridge-session-3"></script>');
-  const appPosition = html.indexOf('<script src="app.js?v=bridge-session-3"></script>');
+  const bridgePosition = html.indexOf('<script src="bridge-client.js?v=bridge-session-4"></script>');
+  const appPosition = html.indexOf('<script src="app.js?v=bridge-session-4"></script>');
 
   assert.ok(bridgePosition >= 0);
   assert.ok(appPosition > bridgePosition);

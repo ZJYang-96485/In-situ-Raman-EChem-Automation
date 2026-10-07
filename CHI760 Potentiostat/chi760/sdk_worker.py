@@ -2,8 +2,9 @@
 
 This module is deliberately executable as a standalone script. The Python
 embeddable distribution can therefore run it without importing the rest of the
-project. ``status`` only parses files. ``load-check`` loads the DLL in this
-short-lived process but never calls a vendor function.
+project. ``status`` only parses files. ``load-check`` loads the DLL but never
+calls a vendor function. ``serve`` keeps a private stdin/stdout JSON session
+alive for the local SpectraLoop bridge and exposes discovery-only commands.
 """
 
 from __future__ import annotations
@@ -16,11 +17,13 @@ import os
 from pathlib import Path
 import struct
 import sys
+import threading
 from time import monotonic, sleep
 from typing import Any
 
 
 SCHEMA_VERSION = "0.1"
+MAX_REQUEST_BYTES = 64 * 1024
 REQUIRED_RUNTIME_DLLS = (
     "QtCore4.dll",
     "QtGui4.dll",
@@ -370,11 +373,12 @@ def run_sdk_dry_run(
         if selected_technique != TECHNIQUE_IDS["CV"]:
             raise ValueError("CV technique readback did not match the request")
 
-        for identifier in (b"m_bDryRun", b"m_bCellOn"):
+        for safety_identifier in (b"m_bDryRun", b"m_bCellOn"):
             payload["vendor_functions_called"] += 1
-            if not bool(has_parameter(identifier)):
+            if not bool(has_parameter(safety_identifier)):
                 raise ValueError(
-                    f"required safety parameter is unavailable: {identifier.decode()}"
+                    "required safety parameter is unavailable: "
+                    f"{safety_identifier.decode()}"
                 )
 
         payload["vendor_functions_called"] += 1
@@ -394,20 +398,22 @@ def run_sdk_dry_run(
             raise ValueError("m_bCellOn did not read back as disabled")
 
         parameter_readbacks: dict[str, float] = {}
-        for identifier, requested in CV_DRY_RUN_PARAMETERS.items():
-            encoded = identifier.encode("ascii")
+        for parameter_name, requested in CV_DRY_RUN_PARAMETERS.items():
+            encoded = parameter_name.encode("ascii")
             payload["vendor_functions_called"] += 1
             if not bool(has_parameter(encoded)):
-                raise ValueError(f"required CV parameter is unavailable: {identifier}")
+                raise ValueError(
+                    f"required CV parameter is unavailable: {parameter_name}"
+                )
             payload["vendor_functions_called"] += 1
             set_parameter(encoded, ctypes.c_float(requested))
             payload["vendor_functions_called"] += 1
             readback = float(get_parameter(encoded))
-            parameter_readbacks[identifier] = readback
+            parameter_readbacks[parameter_name] = readback
             tolerance = max(1e-6, abs(requested) * 1e-5)
             if abs(readback - requested) > tolerance:
                 raise ValueError(
-                    f"CV parameter readback mismatch for {identifier}: "
+                    f"CV parameter readback mismatch for {parameter_name}: "
                     f"requested {requested}, received {readback}"
                 )
         payload["parameter_readbacks"] = parameter_readbacks
@@ -469,16 +475,134 @@ def run_sdk_dry_run(
     return payload
 
 
+def serve_requests(
+    sdk_directory: str | Path,
+    runtime_directory: str | Path,
+    *,
+    dll_name: str = "libec760e.dll",
+    input_stream: Any = None,
+    output_stream: Any = None,
+) -> int:
+    """Serve private JSON-lines requests until EOF or an explicit shutdown."""
+
+    source = sys.stdin if input_stream is None else input_stream
+    destination = sys.stdout if output_stream is None else output_stream
+    for raw_line in source:
+        request_id: Any = None
+        shutdown = False
+        try:
+            if len(raw_line.encode("utf-8")) > MAX_REQUEST_BYTES:
+                raise ValueError("request exceeds the worker size limit")
+            request = json.loads(raw_line)
+            if not isinstance(request, dict):
+                raise ValueError("request must be a JSON object")
+            request_id = request.get("id")
+            if request.get("schema_version") != SCHEMA_VERSION:
+                raise ValueError("worker protocol version mismatch")
+            if not isinstance(request_id, int) or isinstance(request_id, bool):
+                raise ValueError("request id must be an integer")
+            command = request.get("command")
+            if command == "status":
+                result = inspect_runtime(
+                    sdk_directory, runtime_directory, dll_name=dll_name
+                )
+            elif command == "load-check":
+                if request.get("allow_library_load_without_calls") is not True:
+                    raise ValueError("explicit library-load acknowledgement is required")
+                result = load_check(
+                    sdk_directory, runtime_directory, dll_name=dll_name
+                )
+            elif command == "discover":
+                confirmations = request.get("confirmations")
+                required = (
+                    "identity_only",
+                    "no_sample_connected",
+                    "electrode_leads_safe",
+                    "cell_output_off",
+                )
+                if not isinstance(confirmations, dict) or not all(
+                    confirmations.get(name) is True for name in required
+                ):
+                    raise ValueError(
+                        "all local discovery safety confirmations are required"
+                    )
+                result = read_identity_and_capabilities(
+                    sdk_directory, runtime_directory, dll_name=dll_name
+                )
+            elif command == "shutdown":
+                result = {
+                    "schema_version": SCHEMA_VERSION,
+                    "operation": "shutdown",
+                    "library_loaded": False,
+                    "vendor_functions_called": 0,
+                    "device_contacted": False,
+                    "experiments_enabled": False,
+                    "error": None,
+                }
+                shutdown = True
+            else:
+                raise ValueError("unsupported worker command")
+            response = {
+                "schema_version": SCHEMA_VERSION,
+                "id": request_id,
+                "ok": True,
+                "result": result,
+            }
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            response = {
+                "schema_version": SCHEMA_VERSION,
+                "id": request_id,
+                "ok": False,
+                "error": str(error),
+            }
+        destination.write(json.dumps(response, allow_nan=False, sort_keys=True) + "\n")
+        destination.flush()
+        if shutdown:
+            return 0
+    return 0
+
+
+def start_parent_watchdog(parent_pid: int | None) -> None:
+    """Exit the worker if an abruptly terminated bridge cannot close its pipe."""
+
+    if parent_pid is None or parent_pid <= 0 or parent_pid == os.getpid():
+        return
+
+    def watch() -> None:
+        if os.name == "nt":
+            synchronize = 0x00100000
+            infinite = 0xFFFFFFFF
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(synchronize, False, parent_pid)
+            if not handle:
+                os._exit(0)
+            try:
+                kernel32.WaitForSingleObject(handle, infinite)
+            finally:
+                kernel32.CloseHandle(handle)
+            os._exit(0)
+        while True:
+            try:
+                os.kill(parent_pid, 0)
+            except OSError:
+                os._exit(0)
+            sleep(1.0)
+
+    threading.Thread(target=watch, name="chi-worker-parent-watch", daemon=True).start()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Inspect the legacy CHI SDK in an isolated 32-bit process."
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    for command in ("status", "load-check", "discover", "dry-run"):
+    for command in ("status", "load-check", "discover", "dry-run", "serve"):
         child = commands.add_parser(command)
         child.add_argument("--sdk-dir", type=Path, required=True)
         child.add_argument("--runtime-dir", type=Path, required=True)
         child.add_argument("--dll-name", default="libec760e.dll")
+        if command == "serve":
+            child.add_argument("--parent-pid", type=int)
         if command == "load-check":
             child.add_argument(
                 "--allow-library-load-without-calls",
@@ -501,6 +625,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
+    if arguments.command == "serve":
+        start_parent_watchdog(arguments.parent_pid)
+        return serve_requests(
+            arguments.sdk_dir,
+            arguments.runtime_dir,
+            dll_name=arguments.dll_name,
+        )
     if arguments.command == "status":
         payload = inspect_runtime(
             arguments.sdk_dir,

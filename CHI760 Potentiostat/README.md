@@ -34,10 +34,45 @@ records belong under `data/discovery/` and simulations under
 
 `chi760.web_bridge` exposes the same fail-closed boundary to the SpectraLoop
 browser UI. It listens only on loopback, requires a per-launch bearer token,
-restricts browser origins, and exposes storage selection plus identity
-discovery only. Its default gateway is unavailable and makes zero hardware
-calls. A future ready adapter also requires a local Windows approval immediately
-before discovery. There is deliberately no experiment-control HTTP endpoint.
+restricts browser origins, and exposes storage selection plus an SDK capability
+check only. On Windows it starts a persistent repository-local 32-bit worker,
+when that runtime is installed, and communicates over private stdin/stdout JSON
+pipes. The worker opens no network port. A local Windows approval is required
+before any SDK getter is called. There is deliberately no experiment-control
+HTTP endpoint.
+
+The SDK capability check reports the model series compiled into `libec`, not a
+verified physical instrument identity. The supplied API has no serial-number or
+firmware getter and its documented dry-run can work without an attached unit.
+The bridge therefore reports `physical_connection_confirmed: false` until a
+separate, evidence-backed physical check is implemented.
+
+## Persistent 32-bit worker
+
+The default installation is relative to the repository and remains ignored by
+Git:
+
+```text
+.runtime/
+  python-x86/python.exe
+  chi-worker/libec760e.dll
+  chi-worker/QtCore4.dll
+  chi-worker/QtGui4.dll
+  chi-worker/QtSvg4.dll
+  chi-worker/QtXml4.dll
+```
+
+`Start SpectraLoop.cmd` automatically uses this layout. Another computer can
+override it without changing source code by setting
+`SPECTRALOOP_CHI_WORKER_PYTHON`, `SPECTRALOOP_CHI_SDK_DIR`,
+`SPECTRALOOP_CHI_RUNTIME_DIR`, `SPECTRALOOP_CHI_DLL`, or
+`SPECTRALOOP_CHI_INSTRUMENT`.
+
+The persistent protocol permits only status, an explicitly acknowledged DLL
+load check, approved SDK capability discovery, and shutdown. It intentionally
+has no experiment command. The inspected CHI 760D desktop package contains no
+matching `libec760d.dll`; it cannot be selected through the 760E worker merely
+by renaming the executable or folder.
 
 ```python
 from chi760 import CHI760Controller, MockCHI760

@@ -13,7 +13,7 @@
     const instrument = snapshot.instrument || {};
     return {
       header: instrument.discovery_enabled
-        ? "Local bridge connected · identity only"
+        ? "Local bridge connected - SDK worker ready"
         : "Local bridge connected · CHI control locked",
       storageLabel: storage.configured
         ? `${storage.folder_name || "Selected folder"}${storage.available ? "" : " (unavailable)"}`
@@ -24,10 +24,10 @@
           ? "Choose an available folder before recording data."
           : "Choose a folder using the normal Windows folder picker.",
       instrumentLabel: instrument.discovery_enabled
-        ? `${instrument.target || "Instrument"} · identity check ready`
+        ? `${instrument.target || "Instrument"} - SDK check ready`
         : `${instrument.target || "Instrument"} · adapter unavailable`,
       instrumentDetail: instrument.discovery_enabled
-        ? "Only the verified, read-only identity sequence is available."
+        ? instrument.detail || "The worker is ready; physical instrument identity is not confirmed."
         : instrument.blocker || "A verified local vendor adapter is required.",
       discoveryEnabled: instrument.discovery_enabled === true,
     };
@@ -181,14 +181,18 @@
     async function discoverIdentity() {
       if (!client || elements.discoveryButton.disabled) return;
       elements.discoveryButton.disabled = true;
-      elements.actionStatus.textContent = "Waiting for local Windows approval, then reading identity only…";
+      elements.actionStatus.textContent = "Waiting for local Windows approval, then checking SDK capabilities…";
       elements.actionStatus.style.color = "var(--warning)";
       try {
         const result = await client.discoverInstrument(confirmations());
         const identity = result.discovery.identity;
         renderStatus(await client.status());
-        elements.instrumentState.textContent = `${identity.model} · identity verified`;
-        elements.actionStatus.textContent = `Serial ${identity.serial_number}; firmware ${identity.firmware_version}; software ${identity.software_version}.`;
+        elements.instrumentState.textContent = result.discovery.physical_connection_confirmed
+          ? `${identity.model} - physical identity verified`
+          : `${identity.model} - SDK capabilities checked`;
+        elements.actionStatus.textContent = result.discovery.physical_connection_confirmed
+          ? `Serial ${identity.serial_number}; firmware ${identity.firmware_version}; software ${identity.software_version}.`
+          : "The persistent 32-bit worker responded, but the physical instrument is not yet confirmed.";
         elements.actionStatus.style.color = "var(--safe)";
       } catch (error) {
         elements.actionStatus.textContent = error.message;

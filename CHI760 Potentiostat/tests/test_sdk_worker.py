@@ -10,6 +10,7 @@ from chi760.sdk_worker import (
     REQUIRED_RUNTIME_DLLS,
     inspect_runtime,
     main,
+    serve_requests,
 )
 from contextlib import redirect_stdout
 from io import StringIO
@@ -106,6 +107,44 @@ class SDKWorkerTests(unittest.TestCase):
         self.assertEqual(0.05, CV_DRY_RUN_PARAMETERS["m_vv"])
         self.assertEqual(0.002, CV_DRY_RUN_PARAMETERS["m_inpsi"])
         self.assertNotIn("m_bFullCycle", CV_DRY_RUN_PARAMETERS)
+
+    def test_persistent_protocol_serves_status_then_clean_shutdown(self):
+        requests = StringIO(
+            '{"schema_version":"0.1","id":1,"command":"status"}\n'
+            '{"schema_version":"0.1","id":2,"command":"shutdown"}\n'
+        )
+        responses = StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            result = serve_requests(
+                directory,
+                directory,
+                input_stream=requests,
+                output_stream=responses,
+            )
+
+        payloads = [json.loads(line) for line in responses.getvalue().splitlines()]
+        self.assertEqual(0, result)
+        self.assertEqual([1, 2], [payload["id"] for payload in payloads])
+        self.assertTrue(all(payload["ok"] for payload in payloads))
+        self.assertFalse(payloads[0]["result"]["library_loaded"])
+        self.assertEqual("shutdown", payloads[1]["result"]["operation"])
+
+    def test_persistent_protocol_has_no_experiment_command(self):
+        requests = StringIO(
+            '{"schema_version":"0.1","id":7,"command":"run"}\n'
+        )
+        responses = StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            serve_requests(
+                directory,
+                directory,
+                input_stream=requests,
+                output_stream=responses,
+            )
+
+        payload = json.loads(responses.getvalue())
+        self.assertFalse(payload["ok"])
+        self.assertIn("unsupported", payload["error"])
 
 
 if __name__ == "__main__":

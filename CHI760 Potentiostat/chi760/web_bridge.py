@@ -36,9 +36,16 @@ from .errors import (
     VendorEvidenceUnavailableError,
 )
 from .live_backend import CHI760ELiveBackend, LiveConnectionState
+from .worker_transport import (
+    DEFAULT_WORKER_TIMEOUT_S,
+    PersistentSDKWorker,
+    SDKWorkerDiscoveryGateway,
+    WorkerLaunchConfig,
+    default_worker_launch_config,
+)
 
 
-BRIDGE_VERSION = "0.1.1"
+BRIDGE_VERSION = "0.2.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -82,13 +89,16 @@ class UnavailableDiscoveryGateway:
             "The installed CHI 760E files do not document a non-energizing "
             "identity interface. No vendor transport is configured."
         ),
+        *,
+        target: str = "CHI 760E",
     ) -> None:
         self.blocker = blocker
+        self.target = target
         self.hardware_calls = 0
 
     def public_status(self) -> Mapping[str, Any]:
         return {
-            "target": "CHI 760E",
+            "target": self.target,
             "state": "adapter_unavailable",
             "discovery_enabled": False,
             "experiment_control_enabled": False,
@@ -185,11 +195,11 @@ def native_discovery_approval() -> bool:
         root.attributes("-topmost", True)
         return bool(
             messagebox.askyesno(
-                "Confirm CHI 760E identity check",
-                "Allow one read-only instrument identity check?\n\n"
+                "Confirm CHI SDK capability check",
+                "Allow one read-only CHI SDK capability check?\n\n"
                 "Confirm that no sample or electrochemical cell is connected, "
                 "the electrode leads are safe, and the CHI cell output is off.\n\n"
-                "This approval does not authorize an experiment.",
+                "This does not run an experiment or prove physical instrument identity.",
                 parent=root,
                 icon="warning",
             )
@@ -313,7 +323,7 @@ class BridgeState:
             "storage": self.storage.public_status(),
             "instrument": dict(self.gateway.public_status()),
             "safety": {
-                "mode": "identity_discovery_only",
+                "mode": "sdk_discovery_only",
                 "experiments_enabled": False,
                 "raman_enabled": False,
                 "laser_enabled": False,
@@ -431,7 +441,13 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                 discovery_result = self.server.bridge_state.gateway.discover()
                 self._json_response(
                     HTTPStatus.OK,
-                    {"connected": True, "discovery": dict(discovery_result)},
+                    {
+                        "connected": (
+                            discovery_result.get("physical_connection_confirmed") is True
+                        ),
+                        "worker_connected": True,
+                        "discovery": dict(discovery_result),
+                    },
                 )
                 return
             self._json_error(HTTPStatus.NOT_FOUND, "not_found", "API route not found.")
@@ -642,8 +658,45 @@ def _browser_url(base_url: str, token: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, fragment))
 
 
+def _runtime_path(environment_name: str, fallback: Path) -> Path:
+    value = os.environ.get(environment_name)
+    return Path(value).expanduser() if value else fallback
+
+
+def _build_worker_gateway(arguments: argparse.Namespace) -> DiscoveryGateway:
+    if arguments.disable_chi_worker:
+        return UnavailableDiscoveryGateway(
+            "The persistent CHI worker is disabled.",
+            target=arguments.instrument_label,
+        )
+    config = WorkerLaunchConfig(
+        python_executable=arguments.worker_python,
+        worker_script=arguments.worker_script,
+        sdk_directory=arguments.sdk_dir,
+        runtime_directory=arguments.runtime_dir,
+        dll_name=arguments.dll_name,
+    )
+    try:
+        return SDKWorkerDiscoveryGateway(
+            PersistentSDKWorker(config, timeout_s=arguments.worker_timeout),
+            target=arguments.instrument_label,
+        )
+    except (VendorCallError, ValueError) as error:
+        return UnavailableDiscoveryGateway(
+            f"Persistent 32-bit CHI worker unavailable: {error}",
+            target=arguments.instrument_label,
+        )
+
+
+def _close_gateway(gateway: DiscoveryGateway) -> None:
+    close = getattr(gateway, "close", None)
+    if callable(close):
+        close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the SpectraLoop local bridge")
+    worker_defaults = default_worker_launch_config()
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--site-dir", type=Path)
     parser.add_argument("--config", type=Path, default=default_config_path())
@@ -658,6 +711,46 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional deployed SpectraLoop setup URL; defaults to the bundled local UI.",
     )
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument(
+        "--worker-python",
+        type=Path,
+        default=_runtime_path(
+            "SPECTRALOOP_CHI_WORKER_PYTHON", worker_defaults.python_executable
+        ),
+    )
+    parser.add_argument(
+        "--worker-script",
+        type=Path,
+        default=_runtime_path(
+            "SPECTRALOOP_CHI_WORKER_SCRIPT", worker_defaults.worker_script
+        ),
+    )
+    parser.add_argument(
+        "--sdk-dir",
+        type=Path,
+        default=_runtime_path("SPECTRALOOP_CHI_SDK_DIR", worker_defaults.sdk_directory),
+    )
+    parser.add_argument(
+        "--runtime-dir",
+        type=Path,
+        default=_runtime_path(
+            "SPECTRALOOP_CHI_RUNTIME_DIR", worker_defaults.runtime_directory
+        ),
+    )
+    parser.add_argument(
+        "--dll-name",
+        default=os.environ.get("SPECTRALOOP_CHI_DLL", worker_defaults.dll_name),
+    )
+    parser.add_argument(
+        "--instrument-label",
+        default=os.environ.get("SPECTRALOOP_CHI_INSTRUMENT", "CHI 760E SDK"),
+    )
+    parser.add_argument(
+        "--worker-timeout",
+        type=float,
+        default=DEFAULT_WORKER_TIMEOUT_S,
+    )
+    parser.add_argument("--disable-chi-worker", action="store_true")
     args = parser.parse_args(argv)
 
     token = secrets.token_urlsafe(32)
@@ -665,10 +758,11 @@ def main(argv: list[str] | None = None) -> int:
     if site_directory is None:
         candidate = Path(__file__).resolve().parents[2] / "SpectraLoop"
         site_directory = candidate if candidate.is_dir() else None
+    gateway = _build_worker_gateway(args)
     state = BridgeState(
         token=token,
         storage=StorageSettings(args.config),
-        gateway=UnavailableDiscoveryGateway(),
+        gateway=gateway,
     )
     try:
         server = create_server(
@@ -677,6 +771,7 @@ def main(argv: list[str] | None = None) -> int:
             site_directory=site_directory,
         )
     except OSError as error:
+        _close_gateway(gateway)
         print(
             f"Could not start SpectraLoop bridge on 127.0.0.1:{args.port}: {error}"
         )
@@ -696,6 +791,7 @@ def main(argv: list[str] | None = None) -> int:
         pass
     finally:
         server.server_close()
+        _close_gateway(gateway)
     return 0
 
 
