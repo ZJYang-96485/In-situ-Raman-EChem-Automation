@@ -72,6 +72,41 @@
         </aside>
       </section>
 
+      <section class="bridge-panel echem-bridge-panel" aria-labelledby="chi760d-runner-heading">
+        <div class="bridge-heading">
+          <div>
+            <p class="eyebrow">CHI 760D DESKTOP MACRO</p>
+            <h2 id="chi760d-runner-heading">Internal dummy-cell commissioning test</h2>
+            <p class="card-note">One CV step only, +/-0.25 V maximum, one cycle. External samples remain locked.</p>
+          </div>
+          <strong id="chi760d-runner-state"><span class="status-dot amber"></span>Not checked</strong>
+        </div>
+        <p id="chi760d-runner-detail" class="bridge-check-status" role="status" aria-live="polite">Start the dedicated 760D bridge to inspect readiness.</p>
+        <details class="bridge-discovery-details" id="chi760d-runner-details">
+          <summary>Review and authorize the internal-dummy test</summary>
+          <p class="card-note">In the protocol builder, use exactly one CV step, disable iR compensation, and set Raman timing to None. Preparing writes a unique macro and data folder but does not start CHI.</p>
+          <fieldset class="identity-confirmations" id="chi760d-run-confirmations" disabled>
+            <legend>Confirm immediately before starting</legend>
+            <label><input type="checkbox" data-chi760d-confirmation="internal_dummy_only" /> Use the CHI internal dummy cell only; no external sample.</label>
+            <label><input type="checkbox" data-chi760d-confirmation="electrode_leads_disconnected" /> Electrode leads are physically disconnected.</label>
+            <label><input type="checkbox" data-chi760d-confirmation="chi_desktop_closed" /> chi760d.exe is closed so the bridge can launch it.</label>
+            <label><input type="checkbox" data-chi760d-confirmation="limits_reviewed" /> I reviewed the displayed potential and scan limits.</label>
+            <label><input type="checkbox" data-chi760d-confirmation="stop_button_accessible" /> I am at the instrument PC and can use CHI's Stop button.</label>
+          </fieldset>
+          <div class="bridge-actions">
+            <div class="button-row">
+              <button class="button secondary" id="chi760d-prepare-run" type="button" disabled>Prepare dummy CV</button>
+              <button class="button primary" id="chi760d-start-run" type="button" disabled>Start approved dummy CV</button>
+            </div>
+            <p id="chi760d-run-action-status" class="card-note" role="status" aria-live="polite">No 760D macro has been prepared.</p>
+          </div>
+        </details>
+        <aside class="safety-callout bridge-lock-note">
+          <strong>No web emergency stop yet.</strong>
+          Keep the CHI desktop window visible and use its Stop button if required. External-cell protocols cannot be submitted through this workflow.
+        </aside>
+      </section>
+
       <nav class="echem-switch" role="tablist" aria-label="Electrochemistry workspace">
         <button class="active" type="button" role="tab" aria-selected="true" aria-controls="protocol-view" data-view-target="protocol">Protocol Builder</button>
         <button type="button" role="tab" aria-selected="false" aria-controls="data-view" data-view-target="data" tabindex="-1">Synchronized Data</button>
@@ -95,6 +130,7 @@
               <label class="field">
                 <span>Preset</span>
                 <select id="protocol-preset">
+                  <option value="chi760d-dummy">760D internal dummy CV</option>
                   <option value="ocp-eis-cv">OCP → EIS → CV</option>
                   <option value="ca-forward-backward">OCP/EIS + forward/backward CA</option>
                   <option value="orr-lsv">ORR OCP → LSV</option>
@@ -263,8 +299,8 @@
         <a href="setup.html">Experiment setup →</a>
       </footer>
     </main>
-    <script src="bridge-client.js?v=echem-bridge-4"></script>
-    <script src="echem-bridge.js?v=echem-bridge-4"></script>
+    <script src="bridge-client.js?v=echem-bridge-5"></script>
+    <script src="echem-bridge.js?v=echem-bridge-5"></script>
     <script src="protocols.js?v=echem-simulator-1"></script>
     <script src="smoke-test.js?v=echem-simulator-1"></script>
     <script src="simulator.js?v=echem-simulator-1"></script>

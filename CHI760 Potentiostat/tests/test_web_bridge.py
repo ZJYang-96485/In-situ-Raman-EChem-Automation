@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from http.client import HTTPResponse
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -15,6 +16,37 @@ from chi760.web_bridge import (
     UnavailableDiscoveryGateway,
     create_server,
 )
+from chi760.desktop_macro import CHI760DDesktopController
+
+
+class FakeProcess:
+    pid = 760
+
+    def poll(self) -> int | None:
+        return None
+
+
+def valid_760d_protocol() -> dict[str, object]:
+    return {
+        "protocol_name": "760D dummy",
+        "validation": {"valid": True},
+        "raman_sync": {"policy": "none"},
+        "ir_compensation": {"enabled": False},
+        "steps": [
+            {
+                "source_technique": "cv",
+                "parameters": {
+                    "initial_voltage_v": 0.0,
+                    "apex1_voltage_v": 0.1,
+                    "apex2_voltage_v": -0.1,
+                    "final_voltage_v": 0.0,
+                    "scan_rate_v_s": 0.1,
+                    "step_size_v": 0.002,
+                    "cycles": 1,
+                },
+            }
+        ],
+    }
 
 
 class FakeReadyGateway:
@@ -286,6 +318,75 @@ class WebBridgeTests(unittest.TestCase):
         self.assertEqual(404, caught.exception.code)
         caught.exception.close()
         self.assertEqual(0, self.state.gateway.hardware_calls)  # type: ignore[attr-defined]
+
+    def test_760d_dummy_run_requires_prepare_confirmations_and_local_approval(self) -> None:
+        executable = Path(self.temporary.name) / "chi760d.exe"
+        executable.write_bytes(b"test-760d")
+        launches: list[tuple[list[str], dict[str, object]]] = []
+
+        def launcher(command: list[str], **options: object) -> FakeProcess:
+            launches.append((command, options))
+            return FakeProcess()
+
+        self.state.storage.configure(self.selected_folder)
+        self.state.desktop_760d = CHI760DDesktopController(
+            executable,
+            execution_enabled=True,
+            expected_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
+            process_launcher=launcher,
+        )
+        response, raw = self.request(
+            "/v1/instrument/760d/prepare",
+            method="POST",
+            payload={"protocol": valid_760d_protocol()},
+        )
+        self.assertEqual(200, response.status)
+        token = json.loads(raw.decode("utf-8"))["preparation"]["preparation_token"]
+        self.assertEqual([], launches)
+
+        with self.assertRaises(HTTPError) as caught:
+            self.request(
+                "/v1/instrument/760d/run",
+                method="POST",
+                payload={
+                    "preparation_token": token,
+                    "confirmations": {"internal_dummy_only": True},
+                },
+            )
+        self.assertEqual(400, caught.exception.code)
+        caught.exception.close()
+        self.assertEqual([], launches)
+
+        confirmations = {
+            "internal_dummy_only": True,
+            "electrode_leads_disconnected": True,
+            "chi_desktop_closed": True,
+            "limits_reviewed": True,
+            "stop_button_accessible": True,
+        }
+        self.state.experiment_approval = lambda _summary: False
+        with self.assertRaises(HTTPError) as caught:
+            self.request(
+                "/v1/instrument/760d/run",
+                method="POST",
+                payload={"preparation_token": token, "confirmations": confirmations},
+            )
+        self.assertEqual(409, caught.exception.code)
+        caught.exception.close()
+        self.assertEqual([], launches)
+
+        self.state.experiment_approval = lambda _summary: True
+        response, raw = self.request(
+            "/v1/instrument/760d/run",
+            method="POST",
+            payload={"preparation_token": token, "confirmations": confirmations},
+        )
+        result = json.loads(raw.decode("utf-8"))["run"]
+        self.assertEqual(200, response.status)
+        self.assertTrue(result["started"])
+        self.assertFalse(result["remote_stop_available"])
+        self.assertEqual(1, len(launches))
+        self.assertEqual(False, launches[0][1]["shell"])
 
     def test_ready_gateway_runs_only_after_confirmations(self) -> None:
         gateway = FakeReadyGateway()

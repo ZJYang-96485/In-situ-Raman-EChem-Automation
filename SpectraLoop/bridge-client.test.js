@@ -96,3 +96,25 @@ test("local pages can use an HttpOnly same-origin bridge session", async () => {
   assert.equal(requests[0].options.credentials, "same-origin");
   assert.equal("Authorization" in requests[0].options.headers, false);
 });
+
+test("760D methods use the fixed authenticated loopback API", async () => {
+  const requests = [];
+  const client = new BridgeClient({
+    token: "A_secure_test_token_123456789",
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    },
+  });
+
+  await client.prepare760DDummyCV({ protocol_name: "test" });
+  await client.run760DDummyCV("opaque-token", { internal_dummy_only: true });
+
+  assert.equal(requests[0].url, "http://127.0.0.1:8765/v1/instrument/760d/prepare");
+  assert.deepEqual(JSON.parse(requests[0].options.body), { protocol: { protocol_name: "test" } });
+  assert.equal(requests[1].url, "http://127.0.0.1:8765/v1/instrument/760d/run");
+  assert.deepEqual(JSON.parse(requests[1].options.body), {
+    preparation_token: "opaque-token",
+    confirmations: { internal_dummy_only: true },
+  });
+});

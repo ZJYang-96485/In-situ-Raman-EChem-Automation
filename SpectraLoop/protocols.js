@@ -163,6 +163,24 @@ const stepDefinitions = {
 };
 
 const presets = {
+  "chi760d-dummy": {
+    name: "760D internal dummy CV",
+    ramanSync: "none",
+    irEnabled: false,
+    steps: [{
+      kind: "cv",
+      name: "Bounded internal dummy CV",
+      values: {
+        initial_voltage_v: 0,
+        apex1_voltage_v: 0.1,
+        apex2_voltage_v: -0.1,
+        final_voltage_v: 0,
+        scan_rate_v_s: 0.1,
+        step_size_v: 0.002,
+        cycles: 1,
+      },
+    }],
+  },
   levich: {
     name: "Levich CA RPM sweep",
     steps: [{ kind: "levich_rpm_sweep_ca", name: "Levich CA RPM sweep" }],
@@ -475,6 +493,8 @@ function loadPreset(key) {
   const preset = presets[key];
   steps = preset.steps.map((step) => newStep(step.kind, step));
   document.querySelector("#protocol-name").value = preset.name;
+  if (preset.ramanSync) document.querySelector("#raman-sync").value = preset.ramanSync;
+  if (typeof preset.irEnabled === "boolean") document.querySelector("#ir-enabled").checked = preset.irEnabled;
   renderSteps();
 }
 

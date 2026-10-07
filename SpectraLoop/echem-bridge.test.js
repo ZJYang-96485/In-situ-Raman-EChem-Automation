@@ -7,16 +7,37 @@ const { describeSnapshot } = require("./echem-bridge.js");
 
 test("electrochemistry page exposes bridge, storage, and identity controls", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
-  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-4");
-  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-4");
+  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-5");
+  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-5");
 
   assert.match(html, /id="echem-bridge-summary"/);
   assert.match(html, /id="echem-bridge-check-status"/);
   assert.match(html, /id="echem-select-storage"/);
   assert.match(html, /id="echem-discover-instrument"/);
   assert.match(html, /data-echem-confirmation="cell_output_off"/);
+  assert.match(html, /id="chi760d-prepare-run"/);
+  assert.match(html, /id="chi760d-start-run"/);
+  assert.match(html, /data-chi760d-confirmation="internal_dummy_only"/);
+  assert.match(html, /option value="chi760d-dummy"/);
   assert.ok(clientPosition >= 0);
   assert.ok(panelPosition > clientPosition);
+});
+
+test("760D desktop status enables only the explicit internal-dummy workflow", () => {
+  const view = describeSnapshot({
+    storage: { configured: true, available: true, folder_name: "data" },
+    instrument: { target: "CHI 760D", discovery_enabled: false, blocker: "SDK disabled." },
+    desktop_760d: {
+      state: "ready_for_internal_dummy",
+      experiment_control_enabled: true,
+      scope: "internal_dummy_cv_only",
+      remote_stop_available: false,
+    },
+  });
+
+  assert.equal(view.header, "Local bridge connected - 760D dummy test ready");
+  assert.equal(view.dummyReady, true);
+  assert.match(view.dummyDetail, /internal-dummy CV/);
 });
 
 test("unavailable adapter is visibly different from a disconnected bridge", () => {

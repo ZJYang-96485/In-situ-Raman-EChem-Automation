@@ -34,12 +34,11 @@ records belong under `data/discovery/` and simulations under
 
 `chi760.web_bridge` exposes the same fail-closed boundary to the SpectraLoop
 browser UI. It listens only on loopback, requires a per-launch bearer token,
-restricts browser origins, and exposes storage selection plus an SDK capability
-check only. On Windows it starts a persistent repository-local 32-bit worker,
-when that runtime is installed, and communicates over private stdin/stdout JSON
-pipes. The worker opens no network port. A local Windows approval is required
-before any SDK getter is called. There is deliberately no experiment-control
-HTTP endpoint.
+and restricts browser origins. On Windows the normal launcher starts a
+persistent repository-local 32-bit 760E SDK worker, when that runtime is
+installed, and communicates over private stdin/stdout JSON pipes. The worker
+opens no network port. A local Windows approval is required before any SDK
+getter is called. The 760E worker deliberately has no experiment command.
 
 The SDK capability check reports the model series compiled into `libec`, not a
 verified physical instrument identity. The supplied API has no serial-number or
@@ -73,6 +72,33 @@ load check, approved SDK capability discovery, and shutdown. It intentionally
 has no experiment command. The inspected CHI 760D desktop package contains no
 matching `libec760d.dll`; it cannot be selected through the 760E worker merely
 by renaming the executable or folder.
+
+## CHI 760D internal-dummy commissioning path
+
+The separate `Start SpectraLoop 760D.cmd` launcher disables the 760E SDK worker
+and enables one constrained desktop-macro workflow. The executable is found
+relative to the repository (or supplied through `SPECTRALOOP_CHI760D_EXE`) and
+must match the audited CHI 760D v23.01 SHA-256 before the bridge will prepare or
+launch anything.
+
+The first commissioning scope is deliberately narrow:
+
+- exactly one CV step and one cycle;
+- CHI internal dummy cell only, with external electrode leads disconnected;
+- all potentials limited to +/-0.25 V;
+- scan rate limited to 0.01-0.2 V/s and step size to 0.001-0.01 V;
+- Raman and iR compensation disabled;
+- unique run directory and no `fileoverride` or raw macro input;
+- CHI overflow abort enabled, followed by `celloff` and `dummyoff` cleanup;
+- browser confirmations plus a separate local Windows approval immediately
+  before `chi760d.exe /runmacro:...` is launched.
+
+Preparing a run writes the validated protocol and generated macro but performs
+zero hardware calls. Starting it opens the real CHI desktop program. The vendor
+macro interface does not document a remote Stop command, so the operator must
+keep the CHI window visible and use its Stop button if necessary. External-cell
+experiments remain locked until that stop behavior and saved output have been
+confirmed on the physical 760D.
 
 ```python
 from chi760 import CHI760Controller, MockCHI760

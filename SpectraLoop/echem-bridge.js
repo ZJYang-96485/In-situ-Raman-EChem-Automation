@@ -11,8 +11,12 @@
   function describeSnapshot(snapshot) {
     const storage = snapshot.storage || {};
     const instrument = snapshot.instrument || {};
+    const desktop760d = snapshot.desktop_760d || {};
+    const dummyReady = desktop760d.experiment_control_enabled === true;
     return {
-      header: instrument.discovery_enabled
+      header: dummyReady
+        ? "Local bridge connected - 760D dummy test ready"
+        : instrument.discovery_enabled
         ? "Local bridge connected - SDK worker ready"
         : "Local bridge connected · CHI control locked",
       storageLabel: storage.configured
@@ -30,6 +34,12 @@
         ? instrument.detail || "The worker is ready; physical instrument identity is not confirmed."
         : instrument.blocker || "A verified local vendor adapter is required.",
       discoveryEnabled: instrument.discovery_enabled === true,
+      dummyReady,
+      dummyState: desktop760d.state || "adapter_unavailable",
+      dummyDetail: desktop760d.blocker
+        || (desktop760d.active?.running
+          ? `Run ${desktop760d.active.run_label} is active in the CHI desktop.`
+          : "The audited CHI 760D executable is ready for an internal-dummy CV."),
     };
   }
 
@@ -49,9 +59,17 @@
       discoveryButton: doc.querySelector("#echem-discover-instrument"),
       confirmationFieldset: doc.querySelector("#echem-identity-confirmations"),
       confirmationInputs: Array.from(doc.querySelectorAll("[data-echem-confirmation]")),
+      runnerState: doc.querySelector("#chi760d-runner-state"),
+      runnerDetail: doc.querySelector("#chi760d-runner-detail"),
+      runnerActionStatus: doc.querySelector("#chi760d-run-action-status"),
+      runnerFieldset: doc.querySelector("#chi760d-run-confirmations"),
+      runnerInputs: Array.from(doc.querySelectorAll("[data-chi760d-confirmation]")),
+      prepareButton: doc.querySelector("#chi760d-prepare-run"),
+      startButton: doc.querySelector("#chi760d-start-run"),
     };
     let client = null;
     let snapshot = null;
+    let preparationToken = null;
 
     function dot(kind) {
       const marker = doc.createElement("span");
@@ -74,10 +92,27 @@
       );
     }
 
+    function runnerConfirmations() {
+      return Object.fromEntries(
+        elements.runnerInputs.map((input) => [input.dataset.chi760dConfirmation, input.checked]),
+      );
+    }
+
     function updateDiscoveryButton() {
       elements.discoveryButton.disabled = !client
         || snapshot?.instrument?.discovery_enabled !== true
         || !elements.confirmationInputs.every((input) => input.checked);
+    }
+
+    function updateRunnerButtons() {
+      const ready = Boolean(client)
+        && snapshot?.desktop_760d?.experiment_control_enabled === true
+        && snapshot?.storage?.available === true
+        && snapshot?.desktop_760d?.active?.running !== true;
+      elements.prepareButton.disabled = !ready;
+      elements.startButton.disabled = !ready
+        || !preparationToken
+        || !elements.runnerInputs.every((input) => input.checked);
     }
 
     function showUnavailable(message) {
@@ -91,7 +126,12 @@
       elements.instrumentDetail.textContent = "No request was sent to the CHI 760E.";
       elements.storageButton.disabled = true;
       elements.confirmationFieldset.disabled = true;
+      labeledStatus(elements.runnerState, "Not connected", "amber");
+      elements.runnerDetail.textContent = "Start SpectraLoop 760D.cmd on the instrument computer.";
+      elements.runnerFieldset.disabled = true;
+      preparationToken = null;
       updateDiscoveryButton();
+      updateRunnerButtons();
     }
 
     function renderStatus(nextSnapshot) {
@@ -106,7 +146,16 @@
       elements.instrumentDetail.textContent = view.instrumentDetail;
       elements.storageButton.disabled = false;
       elements.confirmationFieldset.disabled = !view.discoveryEnabled;
+      labeledStatus(
+        elements.runnerState,
+        view.dummyReady ? "Internal-dummy CV ready" : "760D execution locked",
+        view.dummyReady ? "safe" : "amber",
+      );
+      elements.runnerDetail.textContent = view.dummyDetail;
+      elements.runnerDetail.className = `bridge-check-status ${view.dummyReady ? "safe" : "warning"}`;
+      elements.runnerFieldset.disabled = !view.dummyReady;
       updateDiscoveryButton();
+      updateRunnerButtons();
     }
 
     function bridgeBaseUrl() {
@@ -201,10 +250,58 @@
       }
     }
 
+    async function prepare760DRun() {
+      if (!client || elements.prepareButton.disabled) return;
+      const protocolCore = browserWindow.SpectraLoopProtocolCore;
+      if (!protocolCore || typeof protocolCore.buildValidatedPlan !== "function") {
+        elements.runnerActionStatus.textContent = "The protocol builder is unavailable.";
+        elements.runnerActionStatus.style.color = "var(--danger)";
+        return;
+      }
+      elements.prepareButton.disabled = true;
+      elements.runnerActionStatus.textContent = "Validating the bounded protocol and reserving a unique run folder...";
+      elements.runnerActionStatus.style.color = "var(--warning)";
+      try {
+        const result = await client.prepare760DDummyCV(protocolCore.buildValidatedPlan());
+        preparationToken = result.preparation.preparation_token;
+        const summary = result.preparation.summary;
+        elements.runnerActionStatus.textContent = `Prepared ${result.preparation.run_label}: ${summary.low_v} to ${summary.high_v} V at ${summary.scan_rate_v_s} V/s. Check every confirmation to start.`;
+        elements.runnerActionStatus.style.color = "var(--safe)";
+      } catch (error) {
+        preparationToken = null;
+        elements.runnerActionStatus.textContent = error.message;
+        elements.runnerActionStatus.style.color = "var(--danger)";
+      } finally {
+        updateRunnerButtons();
+      }
+    }
+
+    async function start760DRun() {
+      if (!client || !preparationToken || elements.startButton.disabled) return;
+      elements.startButton.disabled = true;
+      elements.runnerActionStatus.textContent = "Waiting for approval in the local Windows dialog...";
+      elements.runnerActionStatus.style.color = "var(--warning)";
+      try {
+        const result = await client.run760DDummyCV(preparationToken, runnerConfirmations());
+        preparationToken = null;
+        elements.runnerInputs.forEach((input) => { input.checked = false; });
+        elements.runnerActionStatus.textContent = `${result.run.run_label} started in CHI 760D. Keep the CHI window visible and use its Stop button if needed.`;
+        elements.runnerActionStatus.style.color = "var(--safe)";
+        renderStatus(await client.status());
+      } catch (error) {
+        elements.runnerActionStatus.textContent = error.message;
+        elements.runnerActionStatus.style.color = "var(--danger)";
+        updateRunnerButtons();
+      }
+    }
+
     elements.refreshButton.addEventListener("click", refresh);
     elements.storageButton.addEventListener("click", selectStorage);
     elements.discoveryButton.addEventListener("click", discoverIdentity);
     elements.confirmationInputs.forEach((input) => input.addEventListener("change", updateDiscoveryButton));
+    elements.prepareButton.addEventListener("click", prepare760DRun);
+    elements.startButton.addEventListener("click", start760DRun);
+    elements.runnerInputs.forEach((input) => input.addEventListener("change", updateRunnerButtons));
     refresh();
 
     return { refresh };

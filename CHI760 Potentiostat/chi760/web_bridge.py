@@ -35,6 +35,11 @@ from .errors import (
     VendorCallTimeoutError,
     VendorEvidenceUnavailableError,
 )
+from .desktop_macro import (
+    CHI760DDesktopController,
+    DesktopMacroError,
+    default_chi760d_executable,
+)
 from .live_backend import CHI760ELiveBackend, LiveConnectionState
 from .worker_transport import (
     DEFAULT_WORKER_TIMEOUT_S,
@@ -45,7 +50,7 @@ from .worker_transport import (
 )
 
 
-BRIDGE_VERSION = "0.2.0"
+BRIDGE_VERSION = "0.3.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -59,6 +64,15 @@ REQUIRED_DISCOVERY_CONFIRMATIONS = frozenset(
         "no_sample_connected",
         "electrode_leads_safe",
         "cell_output_off",
+    }
+)
+REQUIRED_760D_RUN_CONFIRMATIONS = frozenset(
+    {
+        "internal_dummy_only",
+        "electrode_leads_disconnected",
+        "chi_desktop_closed",
+        "limits_reviewed",
+        "stop_button_accessible",
     }
 )
 
@@ -146,6 +160,7 @@ class CHI760EDiscoveryGateway:
 
 DirectoryPicker = Callable[[Path | None], Path | None]
 ApprovalPrompt = Callable[[], bool]
+ExperimentApprovalPrompt = Callable[[Mapping[str, Any]], bool]
 
 
 def native_directory_picker(initial: Path | None = None) -> Path | None:
@@ -200,6 +215,39 @@ def native_discovery_approval() -> bool:
                 "Confirm that no sample or electrochemical cell is connected, "
                 "the electrode leads are safe, and the CHI cell output is off.\n\n"
                 "This does not run an experiment or prove physical instrument identity.",
+                parent=root,
+                icon="warning",
+            )
+        )
+    finally:
+        root.destroy()
+
+
+def native_760d_experiment_approval(summary: Mapping[str, Any]) -> bool:
+    """Require a second, local approval for the bounded internal-dummy run."""
+
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+    except ImportError as error:  # pragma: no cover - platform Python packaging
+        raise BridgeRequestError(
+            "local_confirmation_unavailable",
+            "This Python installation cannot display the local experiment confirmation.",
+            503,
+        ) from error
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+        return bool(
+            messagebox.askyesno(
+                "Start CHI 760D internal dummy CV",
+                "Allow one real CHI 760D macro run on the INTERNAL DUMMY CELL?\n\n"
+                f"Potential: {summary.get('low_v')} to {summary.get('high_v')} V\n"
+                f"Scan rate: {summary.get('scan_rate_v_s')} V/s; cycles: 1\n\n"
+                "Confirm the electrode leads are disconnected, chi760d.exe is closed, "
+                "and you can reach the CHI Stop button. External samples are not allowed.",
                 parent=root,
                 icon="warning",
             )
@@ -311,8 +359,25 @@ class BridgeState:
     gateway: DiscoveryGateway
     directory_picker: DirectoryPicker = native_directory_picker
     discovery_approval: ApprovalPrompt = native_discovery_approval
+    desktop_760d: CHI760DDesktopController | None = None
+    experiment_approval: ExperimentApprovalPrompt = native_760d_experiment_approval
 
     def status_payload(self) -> dict[str, Any]:
+        desktop_status = (
+            self.desktop_760d.public_status()
+            if self.desktop_760d is not None
+            else {
+                "target": "CHI 760D desktop",
+                "state": "adapter_unavailable",
+                "executable_verified": False,
+                "experiment_control_enabled": False,
+                "scope": "internal_dummy_cv_only",
+                "remote_stop_available": False,
+                "hardware_calls": 0,
+                "blocker": "The CHI 760D desktop adapter is not configured.",
+                "active": None,
+            }
+        )
         return {
             "api_version": "v1",
             "service": {
@@ -322,9 +387,16 @@ class BridgeState:
             },
             "storage": self.storage.public_status(),
             "instrument": dict(self.gateway.public_status()),
+            "desktop_760d": desktop_status,
             "safety": {
-                "mode": "sdk_discovery_only",
-                "experiments_enabled": False,
+                "mode": (
+                    "chi760d_internal_dummy"
+                    if desktop_status.get("experiment_control_enabled") is True
+                    else "sdk_discovery_only"
+                ),
+                "experiments_enabled": desktop_status.get("experiment_control_enabled") is True,
+                "experiment_scope": "internal_dummy_cv_only",
+                "remote_stop_available": False,
                 "raman_enabled": False,
                 "laser_enabled": False,
                 "automated_decisions_enabled": False,
@@ -409,6 +481,68 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                 )
                 self._json_response(HTTPStatus.OK, {"storage": result})
                 return
+            if route == "/v1/instrument/760d/prepare":
+                controller = self.server.bridge_state.desktop_760d
+                if controller is None:
+                    raise BridgeRequestError(
+                        "desktop_adapter_unavailable",
+                        "The CHI 760D desktop adapter is not configured.",
+                        409,
+                    )
+                protocol = payload.get("protocol")
+                if not isinstance(protocol, Mapping):
+                    raise BridgeRequestError(
+                        "invalid_protocol", "A validated protocol object is required."
+                    )
+                storage_root = self.server.bridge_state.storage.root
+                if storage_root is None or not storage_root.is_dir():
+                    raise BridgeRequestError(
+                        "storage_required", "Choose an available storage folder first."
+                    )
+                preparation = controller.prepare(protocol, storage_root)
+                self._json_response(
+                    HTTPStatus.OK, {"preparation": preparation}
+                )
+                return
+            if route == "/v1/instrument/760d/run":
+                controller = self.server.bridge_state.desktop_760d
+                if controller is None:
+                    raise BridgeRequestError(
+                        "desktop_adapter_unavailable",
+                        "The CHI 760D desktop adapter is not configured.",
+                        409,
+                    )
+                confirmations = payload.get("confirmations")
+                if not isinstance(confirmations, Mapping):
+                    raise BridgeRequestError(
+                        "confirmations_required",
+                        "All 760D internal-dummy safety confirmations are required.",
+                    )
+                missing = sorted(
+                    key
+                    for key in REQUIRED_760D_RUN_CONFIRMATIONS
+                    if confirmations.get(key) is not True
+                )
+                if missing:
+                    raise BridgeRequestError(
+                        "confirmations_required",
+                        f"Missing confirmations: {', '.join(missing)}.",
+                    )
+                preparation_token = payload.get("preparation_token")
+                if not isinstance(preparation_token, str) or not preparation_token:
+                    raise BridgeRequestError(
+                        "preparation_required", "Prepare the 760D run before starting it."
+                    )
+                summary = controller.preparation_summary(preparation_token)
+                if not self.server.bridge_state.experiment_approval(summary):
+                    raise BridgeRequestError(
+                        "local_approval_declined",
+                        "The 760D run was not approved on the instrument computer.",
+                        409,
+                    )
+                result = controller.execute(preparation_token)
+                self._json_response(HTTPStatus.OK, {"run": result})
+                return
             if route == "/v1/instrument/discover":
                 confirmations = payload.get("confirmations")
                 if not isinstance(confirmations, Mapping):
@@ -457,6 +591,12 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
             self._json_error(
                 HTTPStatus.CONFLICT,
                 "vendor_interface_unavailable",
+                str(error),
+            )
+        except DesktopMacroError as error:
+            self._json_error(
+                HTTPStatus.CONFLICT,
+                "chi760d_macro_blocked",
                 str(error),
             )
         except (BackendStateError, InvalidVendorResponseError, VendorCallError, VendorCallTimeoutError) as error:
@@ -751,6 +891,18 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_WORKER_TIMEOUT_S,
     )
     parser.add_argument("--disable-chi-worker", action="store_true")
+    parser.add_argument(
+        "--chi760d-exe",
+        type=Path,
+        default=_runtime_path(
+            "SPECTRALOOP_CHI760D_EXE", default_chi760d_executable()
+        ),
+    )
+    parser.add_argument(
+        "--enable-chi760d-dummy",
+        action="store_true",
+        help="Enable only the bounded CHI 760D internal-dummy CV workflow.",
+    )
     args = parser.parse_args(argv)
 
     token = secrets.token_urlsafe(32)
@@ -763,6 +915,10 @@ def main(argv: list[str] | None = None) -> int:
         token=token,
         storage=StorageSettings(args.config),
         gateway=gateway,
+        desktop_760d=CHI760DDesktopController(
+            args.chi760d_exe,
+            execution_enabled=args.enable_chi760d_dummy,
+        ),
     )
     try:
         server = create_server(
@@ -782,7 +938,10 @@ def main(argv: list[str] | None = None) -> int:
     browser_url = _browser_url(args.web_url or local_start_url, token)
     print(f"SpectraLoop local bridge {BRIDGE_VERSION}")
     print(f"Listening only on http://127.0.0.1:{port}")
-    print("Mode: identity discovery only; experiments are disabled")
+    if args.enable_chi760d_dummy:
+        print("Mode: CHI 760D internal-dummy CV enabled; external-cell experiments are locked")
+    else:
+        print("Mode: SDK discovery only; experiments are disabled")
     if not args.no_browser:
         webbrowser.open(browser_url)
     try:

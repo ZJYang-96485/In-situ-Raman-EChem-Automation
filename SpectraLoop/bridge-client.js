@@ -121,6 +121,20 @@
         body: { confirmations },
       });
     }
+
+    prepare760DDummyCV(protocol) {
+      return this.request("/v1/instrument/760d/prepare", {
+        method: "POST",
+        body: { protocol },
+      });
+    }
+
+    run760DDummyCV(preparationToken, confirmations) {
+      return this.request("/v1/instrument/760d/run", {
+        method: "POST",
+        body: { preparation_token: preparationToken, confirmations },
+      });
+    }
   }
 
   return {
