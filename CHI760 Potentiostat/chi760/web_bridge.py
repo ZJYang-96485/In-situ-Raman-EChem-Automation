@@ -562,12 +562,20 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                     raise BridgeRequestError(
                         "invalid_plan", "A bounded CHI 760E CV plan is required."
                     )
+                task_name = payload.get("task_name")
+                if not isinstance(task_name, str) or not task_name.strip():
+                    raise BridgeRequestError(
+                        "task_name_required",
+                        "A task name is required to organize the saved trial.",
+                    )
                 storage_root = self.server.bridge_state.storage.root
                 if storage_root is None or not storage_root.is_dir():
                     raise BridgeRequestError(
                         "storage_required", "Choose an available storage folder first."
                     )
-                preparation = controller_760e.prepare(plan, storage_root)
+                preparation = controller_760e.prepare(
+                    plan, storage_root, task_name.strip()
+                )
                 self._json_response(
                     HTTPStatus.OK, {"preparation": preparation}
                 )

@@ -456,6 +456,7 @@ class SDKWorkerDiscoveryGateway:
 @dataclass
 class Prepared760ECVRun:
     token: str
+    task_name: str
     plan: dict[str, Any]
     writer: RunWriter
     prepared_at: datetime
@@ -519,7 +520,12 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         )
         return status
 
-    def prepare(self, plan: Mapping[str, Any], data_root: str | Path) -> dict[str, Any]:
+    def prepare(
+        self,
+        plan: Mapping[str, Any],
+        data_root: str | Path,
+        task_name: str,
+    ) -> dict[str, Any]:
         self._require_commissioning_ready()
         normalized = _normalize_760e_cv_plan(plan)
         root = Path(data_root).expanduser()
@@ -538,17 +544,27 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
                 )
             store = RunDataStore(root)
             store.ensure_layout()
-            writer = store.create_run()
+            try:
+                writer = store.create_task_trial(task_name)
+            except ValueError as error:
+                raise CHI760ECommissioningError(str(error)) from error
+            except OSError as error:
+                raise CHI760ECommissioningError(
+                    "The task trial folder could not be reserved."
+                ) from error
+            normalized_task_name = task_name.strip()
             writer.write_protocol_once(
                 {
                     "schema_version": "0.1",
                     "target_model": "760E",
+                    "task_name": normalized_task_name,
                     "commissioning_plan": normalized,
                 }
             )
             token = secrets.token_urlsafe(24)
             prepared = Prepared760ECVRun(
                 token=token,
+                task_name=normalized_task_name,
                 plan=normalized,
                 writer=writer,
                 prepared_at=datetime.now(timezone.utc),
@@ -565,6 +581,8 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         return {
             "preparation_token": token,
             "run_label": writer.paths.directory.name,
+            "task_name": normalized_task_name,
+            "task_folder": writer.paths.directory.parent.name,
             "summary": dict(normalized),
             "requires_local_approval": True,
             "remote_stop_available": True,
@@ -579,6 +597,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
                 )
             return {
                 "run_label": prepared.writer.paths.directory.name,
+                "task_name": prepared.task_name,
                 **prepared.plan,
             }
 

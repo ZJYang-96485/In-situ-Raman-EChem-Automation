@@ -137,6 +137,16 @@ class DesktopMacroTests(unittest.TestCase):
         self.assertEqual(0, controller.hardware_calls)
         macros = list((self.data_root / "runs").rglob("*.mcr"))
         self.assertEqual(1, len(macros))
+        self.assertEqual("trial-001", first["run_label"])
+        self.assertEqual("760D internal dummy check", first["task_folder"])
+        self.assertEqual(
+            self.data_root
+            / "runs"
+            / macros[0].parents[2].name
+            / "760D internal dummy check"
+            / "trial-001",
+            macros[0].parent,
+        )
 
     def test_execution_is_locked_without_dedicated_runtime_flag(self) -> None:
         controller = self.controller(enabled=False)
@@ -169,7 +179,7 @@ class DesktopMacroTests(unittest.TestCase):
         controller = self.controller(enabled=True)
         prepared = controller.prepare(valid_protocol(), self.data_root)
         controller.execute(str(prepared["preparation_token"]))
-        run_directory = next((self.data_root / "runs").glob("*/*"))
+        run_directory = next((self.data_root / "runs").glob("*/*/*"))
         (run_directory / "step_01_cv.txt").write_text("test output\n", encoding="ascii")
         self.process.return_code = 0
 

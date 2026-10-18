@@ -13,6 +13,17 @@ from uuid import uuid4
 
 
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+_INVALID_WINDOWS_COMPONENT = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_TRIAL_DIRECTORY = re.compile(r"^trial-(\d{3,})$")
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
+_MAX_TASK_FOLDER_LENGTH = 80
 _REQUIRED_METADATA = {
     "started_at",
     "units",
@@ -90,6 +101,48 @@ class RunDataStore:
             ) from error
         return RunWriter(_paths_for(run_directory))
 
+    def create_task_trial(
+        self,
+        task_name: str,
+        *,
+        timestamp: datetime | None = None,
+    ) -> "RunWriter":
+        """Reserve ``runs/date/task/trial-NNN`` without overwriting a trial.
+
+        The task name is converted to one portable Windows path component. Trial
+        numbers increase within each task and day, and the final directory
+        creation is atomic so simultaneous preparations cannot share a trial.
+        """
+
+        moment = timestamp or datetime.now().astimezone()
+        if moment.tzinfo is None or moment.utcoffset() is None:
+            raise ValueError("timestamp must be timezone-aware")
+        task_folder = safe_task_folder_name(task_name)
+        task_directory = self.runs_root / moment.strftime("%Y-%m-%d") / task_folder
+        task_directory.mkdir(parents=True, exist_ok=True)
+        try:
+            task_directory.resolve(strict=True).relative_to(
+                self.runs_root.resolve(strict=True)
+            )
+        except ValueError as error:
+            raise ValueError(
+                "task folder must remain inside the runs directory"
+            ) from error
+
+        existing_numbers = [
+            int(match.group(1))
+            for child in task_directory.iterdir()
+            if (match := _TRIAL_DIRECTORY.fullmatch(child.name)) is not None
+        ]
+        trial_number = max(existing_numbers, default=0) + 1
+        while True:
+            trial_directory = task_directory / f"trial-{trial_number:03d}"
+            try:
+                trial_directory.mkdir(exist_ok=False)
+                return RunWriter(_paths_for(trial_directory))
+            except FileExistsError:
+                trial_number += 1
+
     def write_discovery_record(
         self,
         filename: str,
@@ -154,6 +207,27 @@ class RunWriter:
     def append_event(self, event: Mapping[str, Any]) -> Path:
         _append_json_line(self.paths.events, event)
         return self.paths.events
+
+
+def safe_task_folder_name(task_name: str) -> str:
+    """Return a readable, single-component Windows-safe task folder name."""
+
+    if not isinstance(task_name, str) or not task_name.strip():
+        raise ValueError("task name must be a non-empty string")
+    cleaned = _INVALID_WINDOWS_COMPONENT.sub("-", task_name.strip())
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\s*-\s*", "-", cleaned)
+    cleaned = re.sub(r"-{2,}", "-", cleaned).strip(" .-")
+    if not cleaned:
+        raise ValueError("task name must contain folder-safe characters")
+    if len(cleaned) > _MAX_TASK_FOLDER_LENGTH:
+        raise ValueError(
+            f"task name must be at most {_MAX_TASK_FOLDER_LENGTH} characters after cleaning"
+        )
+    reserved_stem = cleaned.split(".", 1)[0].upper()
+    if reserved_stem in _WINDOWS_RESERVED_NAMES:
+        raise ValueError(f"task name {cleaned!r} is reserved by Windows")
+    return cleaned
 
 
 def _paths_for(directory: Path) -> RunPaths:

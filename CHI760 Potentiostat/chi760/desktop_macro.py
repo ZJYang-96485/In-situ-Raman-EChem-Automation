@@ -343,7 +343,14 @@ class CHI760DDesktopController:
                 raise DesktopMacroError("A CHI 760D desktop run is already active.")
             store = RunDataStore(root)
             store.ensure_layout()
-            writer = store.create_run()
+            try:
+                writer = store.create_task_trial(plan.protocol_name)
+            except ValueError as error:
+                raise DesktopMacroError(str(error)) from error
+            except OSError as error:
+                raise DesktopMacroError(
+                    "The task trial folder could not be reserved."
+                ) from error
             writer.write_protocol_once(dict(protocol))
             macro_path = writer.paths.directory / "chi760d_internal_dummy_series.mcr"
             text_outputs = tuple(
@@ -369,6 +376,8 @@ class CHI760DDesktopController:
         return {
             "preparation_token": token,
             "run_label": writer.paths.directory.name,
+            "task_name": plan.protocol_name,
+            "task_folder": writer.paths.directory.parent.name,
             "macro_sha256": _sha256(macro_path),
             "summary": plan.public_summary(),
             "requires_local_approval": True,
@@ -428,6 +437,8 @@ class CHI760DDesktopController:
         return {
             "started": True,
             "run_label": prepared.writer.paths.directory.name,
+            "task_name": prepared.plan.protocol_name,
+            "task_folder": prepared.writer.paths.directory.parent.name,
             "summary": prepared.plan.public_summary(),
             "remote_stop_available": False,
             "operator_instruction": "Keep the CHI window visible; use its Stop button if needed.",

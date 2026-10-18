@@ -81,7 +81,7 @@ class FakeReadyGateway:
 class Fake760ECommissioningController(FakeReadyGateway):
     def __init__(self) -> None:
         super().__init__()
-        self.prepares: list[tuple[dict[str, object], Path]] = []
+        self.prepares: list[tuple[dict[str, object], Path, str]] = []
         self.starts: list[tuple[str, dict[str, object]]] = []
         self.statuses: list[str] = []
         self.stops: list[str] = []
@@ -98,12 +98,14 @@ class Fake760ECommissioningController(FakeReadyGateway):
         }
 
     def prepare(
-        self, plan: dict[str, object], data_root: Path
+        self, plan: dict[str, object], data_root: Path, task_name: str
     ) -> dict[str, object]:
-        self.prepares.append((dict(plan), data_root))
+        self.prepares.append((dict(plan), data_root, task_name))
         return {
             "preparation_token": "prepared-760e",
-            "run_label": "test-run-760e",
+            "run_label": "trial-001",
+            "task_name": task_name,
+            "task_folder": task_name,
             "summary": dict(plan),
             "requires_local_approval": True,
             "remote_stop_available": True,
@@ -112,7 +114,11 @@ class Fake760ECommissioningController(FakeReadyGateway):
     def preparation_summary(self, preparation_token: str) -> dict[str, object]:
         if preparation_token != "prepared-760e":
             raise ValueError("invalid preparation")
-        return {"target_model": "760E", **bounded_760e_plan()}
+        return {
+            "target_model": "760E",
+            "task_name": "760E catalyst screening",
+            **bounded_760e_plan(),
+        }
 
     def start(
         self, preparation_token: str, confirmations: dict[str, object]
@@ -122,7 +128,7 @@ class Fake760ECommissioningController(FakeReadyGateway):
             "started": True,
             "job_id": "job-760e",
             "state": "starting",
-            "run_label": "test-run-760e",
+            "run_label": "trial-001",
             "remote_stop_available": True,
         }
 
@@ -131,7 +137,7 @@ class Fake760ECommissioningController(FakeReadyGateway):
         return {
             "job_id": job_id,
             "state": "completed",
-            "run_label": "test-run-760e",
+            "run_label": "trial-001",
             "data_points": 2,
             "data_saved": True,
         }
@@ -429,7 +435,10 @@ class WebBridgeTests(unittest.TestCase):
             self.request(
                 "/v1/instrument/760e/prepare",
                 method="POST",
-                payload={"plan": bounded_760e_plan()},
+                payload={
+                    "task_name": "760E catalyst screening",
+                    "plan": bounded_760e_plan(),
+                },
             )
 
         self.assertEqual(409, caught.exception.code)
@@ -453,22 +462,44 @@ class WebBridgeTests(unittest.TestCase):
             self.request(
                 "/v1/instrument/760e/prepare",
                 method="POST",
-                payload={"plan": bounded_760e_plan()},
+                payload={
+                    "task_name": "760E catalyst screening",
+                    "plan": bounded_760e_plan(),
+                },
             )
         self.assertEqual(400, caught.exception.code)
         caught.exception.close()
         self.assertEqual([], controller.prepares)
 
         self.state.storage.configure(self.selected_folder)
+        with self.assertRaises(HTTPError) as caught:
+            self.request(
+                "/v1/instrument/760e/prepare",
+                method="POST",
+                payload={"plan": bounded_760e_plan()},
+            )
+        self.assertEqual(400, caught.exception.code)
+        self.assertEqual(
+            "task_name_required",
+            self.error_payload(caught.exception)["error"]["code"],  # type: ignore[index]
+        )
+        self.assertEqual([], controller.prepares)
+
         response, raw = self.request(
             "/v1/instrument/760e/prepare",
             method="POST",
-            payload={"plan": bounded_760e_plan()},
+            payload={
+                "task_name": "760E catalyst screening",
+                "plan": bounded_760e_plan(),
+            },
         )
         preparation = json.loads(raw.decode("utf-8"))["preparation"]
         self.assertEqual(200, response.status)
         self.assertEqual("prepared-760e", preparation["preparation_token"])
+        self.assertEqual("trial-001", preparation["run_label"])
+        self.assertEqual("760E catalyst screening", preparation["task_name"])
         self.assertEqual(1, len(controller.prepares))
+        self.assertEqual("760E catalyst screening", controller.prepares[0][2])
         self.assertEqual([], controller.starts)
         self.assertNotIn(str(self.selected_folder), raw.decode("utf-8"))
 

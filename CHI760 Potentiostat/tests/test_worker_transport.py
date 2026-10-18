@@ -217,13 +217,18 @@ class WorkerTransportTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            preparation = gateway.prepare(bounded_760e_plan(), root)
+            preparation = gateway.prepare(
+                bounded_760e_plan(), root, "760E catalyst screening"
+            )
 
             self.assertEqual([], worker.requests)
-            protocol_files = list(root.glob("runs/*/*/protocol.json"))
+            protocol_files = list(root.glob("runs/*/*/*/protocol.json"))
             self.assertEqual(1, len(protocol_files))
+            self.assertEqual("trial-001", preparation["run_label"])
+            self.assertEqual("760E catalyst screening", preparation["task_folder"])
             protocol = protocol_files[0].read_text(encoding="utf-8")
             self.assertIn('"target_model": "760E"', protocol)
+            self.assertIn('"task_name": "760E catalyst screening"', protocol)
 
             started = gateway.start(
                 str(preparation["preparation_token"]),
@@ -237,13 +242,13 @@ class WorkerTransportTests(unittest.TestCase):
             self.assertEqual(
                 ["cv-start", "cv-status", "cv-result"], worker.requests
             )
-            raw_files = list(root.glob("runs/*/*/echem_raw.csv"))
+            raw_files = list(root.glob("runs/*/*/*/echem_raw.csv"))
             self.assertEqual(1, len(raw_files))
             self.assertEqual(
                 "potential_V,current_A\n-0.1,-1e-06\n0,0\n0.1,1e-06\n",
                 raw_files[0].read_text(encoding="ascii"),
             )
-            metadata_files = list(root.glob("runs/*/*/metadata.json"))
+            metadata_files = list(root.glob("runs/*/*/*/metadata.json"))
             metadata = metadata_files[0].read_text(encoding="utf-8")
             self.assertIn('"state": "completed"', metadata)
             self.assertNotIn(str(root), json.dumps(status))
@@ -256,7 +261,9 @@ class WorkerTransportTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(CHI760ECommissioningError):
-                gateway.prepare(bounded_760e_plan(), Path(directory))
+                gateway.prepare(
+                    bounded_760e_plan(), Path(directory), "760E locked test"
+                )
 
         self.assertFalse(gateway.public_status()["experiment_control_enabled"])
         self.assertEqual([], worker.requests)
@@ -268,7 +275,9 @@ class WorkerTransportTests(unittest.TestCase):
             execution_enabled=True,
         )
         with tempfile.TemporaryDirectory() as directory:
-            preparation = gateway.prepare(bounded_760e_plan(), Path(directory))
+            preparation = gateway.prepare(
+                bounded_760e_plan(), Path(directory), "760E confirmation test"
+            )
             confirmations = commissioning_confirmations()
             confirmations["no_other_chi_measurement_running"] = False
 
@@ -292,7 +301,7 @@ class WorkerTransportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with self.assertRaisesRegex(CHI760ECommissioningError, "0.25"):
-                gateway.prepare(plan, root)
+                gateway.prepare(plan, root, "760E expanded voltage test")
 
             self.assertFalse((root / "runs").exists())
         self.assertEqual([], worker.requests)

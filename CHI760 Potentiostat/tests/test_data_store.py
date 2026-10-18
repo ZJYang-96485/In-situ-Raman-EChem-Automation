@@ -45,6 +45,54 @@ class RunDataStoreTests(unittest.TestCase):
 
             self.assertEqual("preserve", marker.read_text(encoding="utf-8"))
 
+    def test_task_trials_are_grouped_by_day_and_increment_without_overwrite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "data"
+            store = RunDataStore(root)
+            timestamp = datetime(2026, 10, 18, 15, 30, tzinfo=timezone.utc)
+
+            first = store.create_task_trial(
+                "OCP / EIS: catalyst A", timestamp=timestamp
+            )
+            marker = first.paths.directory / "keep.txt"
+            marker.write_text("preserve", encoding="utf-8")
+            second = store.create_task_trial(
+                "OCP / EIS: catalyst A", timestamp=timestamp
+            )
+
+            task_directory = (
+                root / "runs" / "2026-10-18" / "OCP-EIS-catalyst A"
+            )
+            self.assertEqual(task_directory / "trial-001", first.paths.directory)
+            self.assertEqual(task_directory / "trial-002", second.paths.directory)
+            self.assertEqual("preserve", marker.read_text(encoding="utf-8"))
+
+    def test_task_trial_rejects_blank_reserved_and_excessive_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = RunDataStore(Path(directory) / "data")
+            timestamp = datetime(2026, 10, 18, 15, 30, tzinfo=timezone.utc)
+
+            for task_name in ("   ", "CON", "x" * 81):
+                with self.subTest(task_name=task_name):
+                    with self.assertRaises(ValueError):
+                        store.create_task_trial(task_name, timestamp=timestamp)
+
+    def test_task_name_cannot_escape_the_runs_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "data"
+            store = RunDataStore(root)
+            writer = store.create_task_trial(
+                "../outside",
+                timestamp=datetime(2026, 10, 18, 15, 30, tzinfo=timezone.utc),
+            )
+
+            self.assertEqual("outside", writer.paths.directory.parent.name)
+            self.assertEqual(
+                root / "runs" / "2026-10-18" / "outside" / "trial-001",
+                writer.paths.directory,
+            )
+            self.assertFalse((root.parent / "outside").exists())
+
     def test_raw_processed_metadata_and_logs_remain_separate(self):
         with tempfile.TemporaryDirectory() as directory:
             store = RunDataStore(Path(directory) / "data")
