@@ -584,7 +584,7 @@ function refreshTargetModelUI() {
   modelSelect.value = targetModel;
   benchSelect.value = benchState;
   document.querySelector("#protocol-target-label").textContent = `CHI ${targetModel} plan`;
-  document.querySelector("#protocol-libec-label").textContent = `${targetModel} documented`;
+  document.querySelector("#protocol-libec-label").textContent = targetModel;
   document.querySelector("#protocol-bench-label").textContent = benchState === "busy"
     ? "· measurement in progress; offline only"
     : "· available for approved commissioning";
@@ -593,23 +593,20 @@ function refreshTargetModelUI() {
     .map((kind) => ({
       kind,
       definition: stepDefinitions[kind],
-      status: effectiveStatus(kind),
-      commissioning: targetModel === "760D" && ["wait", "cv"].includes(kind),
     }))
     .filter(({ definition }) => Boolean(definition));
   document.querySelector("#protocol-model-function-count").textContent = String(availableFunctions.length);
   document.querySelector("#protocol-model-functions").innerHTML = availableFunctions
-    .map(({ definition, status, commissioning }) => `
-      <span class="model-function ${status}${commissioning ? " commissioning" : ""}">
+    .map(({ definition }) => `
+      <span class="model-function">
         <strong>${definition.label}</strong>
-        <small>${commissioning ? "Commissioning run" : `${badgeLabel(status)} plan`}</small>
       </span>
     `)
     .join("");
   const functionNotes = {
-    "760B": "CV and amperometric i-t planning are available. Live control is not configured; the active measurement remains protected.",
-    "760D": "Documented planning plus a separately approved internal-dummy CV commissioning route.",
-    "760E": "The broadest planning surface. Some functions are derived, scheduled, desktop-only, or still require SDK verification.",
+    "760B": "Choose a function to add it to the protocol. Starting hardware remains separately protected while a measurement is active.",
+    "760D": "Choose a function to add it to the protocol. Hardware readiness is checked separately before execution.",
+    "760E": "Choose a function to add it to the protocol. Hardware readiness is checked separately before execution.",
   };
   document.querySelector("#protocol-model-function-note").textContent = functionNotes[targetModel]
     || "The selected model has no configured automation profile.";

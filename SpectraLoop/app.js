@@ -149,31 +149,21 @@ function validate() {
 function refreshCapabilities() {
   const model = document.querySelector("#chi-model").value;
   const profile = capabilityProfiles[model];
-  const labelFor = (status) => ({
-    direct: "Documented",
-    derived: "Derived output",
-    desktop: "Desktop route",
-    verify: "Verify SDK",
-  }[status]);
   const available = Object.entries(profile)
-    .flatMap(([status, techniques]) => techniques.map((technique) => ({ status, technique })));
-  const commissioning = model === "760D" ? new Set(["CV"]) : new Set();
+    .flatMap(([, techniques]) => techniques.map((technique) => ({ technique })));
   document.querySelector("#profile-title").textContent = `CHI ${model} automation functions`;
-  document.querySelector("#profile-summary").textContent = commissioning.size
-    ? `${available.length} planning functions · ${commissioning.size} bounded commissioning function`
-    : `${available.length} planning functions · live execution not configured`;
+  document.querySelector("#profile-summary").textContent = `${available.length} available functions`;
   document.querySelector("#chi-capabilities").innerHTML = available
-    .map(({ status, technique }) => `
-      <li class="${status}${commissioning.has(technique) ? " commissioning" : ""}">
+    .map(({ technique }) => `
+      <li>
         <strong>${technique}</strong>
-        <small>${commissioning.has(technique) ? "Bounded commissioning run" : `${labelFor(status)} planning`}</small>
       </li>
     `)
     .join("");
   const modelNotes = {
-    "760B": "CV and i-t are available for protocol planning. Live 760B control is not configured, so selecting this model cannot interrupt its current measurement.",
-    "760D": "The documented profile is available for planning. Real execution remains limited to the separately gated internal-dummy CV/wait commissioning series.",
-    "760E": "Documented, derived, desktop, and verify-SDK functions are shown separately. Selecting a function does not by itself authorize hardware I/O.",
+    "760B": "Choose a function to add it to a protocol. Starting hardware remains separately protected while a measurement is active.",
+    "760D": "Choose a function to add it to a protocol. Hardware readiness is checked separately before execution.",
+    "760E": "Choose a function to add it to a protocol. Hardware readiness is checked separately before execution.",
   };
   document.querySelector("#profile-note").textContent = modelNotes[model];
 }

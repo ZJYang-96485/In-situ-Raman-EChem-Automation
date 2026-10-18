@@ -24,6 +24,24 @@ test("electrochemistry page exposes bridge, storage, and identity controls", () 
   assert.ok(panelPosition > clientPosition);
 });
 
+test("available function panels show names without implementation labels", () => {
+  const setupSource = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
+  const protocolSource = fs.readFileSync(path.join(__dirname, "protocols.js"), "utf8");
+  const setupList = setupSource.slice(
+    setupSource.indexOf('document.querySelector("#chi-capabilities").innerHTML'),
+    setupSource.indexOf("const modelNotes"),
+  );
+  const protocolList = protocolSource.slice(
+    protocolSource.indexOf('document.querySelector("#protocol-model-functions").innerHTML'),
+    protocolSource.indexOf("const functionNotes"),
+  );
+
+  assert.doesNotMatch(setupList, /<small>|Documented|Derived|Desktop|Verify SDK/);
+  assert.doesNotMatch(protocolList, /<small>|badgeLabel|commissioning/);
+  assert.match(setupList, /<strong>\$\{technique\}<\/strong>/);
+  assert.match(protocolList, /<strong>\$\{definition\.label\}<\/strong>/);
+});
+
 test("760D desktop status enables only the explicit internal-dummy workflow", () => {
   const view = describeSnapshot({
     storage: { configured: true, available: true, folder_name: "data" },
