@@ -224,7 +224,7 @@ def native_discovery_approval() -> bool:
 
 
 def native_760d_experiment_approval(summary: Mapping[str, Any]) -> bool:
-    """Require a second, local approval for the bounded internal-dummy run."""
+    """Require a second, local approval for the bounded internal-dummy series."""
 
     try:
         import tkinter as tk
@@ -242,10 +242,10 @@ def native_760d_experiment_approval(summary: Mapping[str, Any]) -> bool:
         root.attributes("-topmost", True)
         return bool(
             messagebox.askyesno(
-                "Start CHI 760D internal dummy CV",
-                "Allow one real CHI 760D macro run on the INTERNAL DUMMY CELL?\n\n"
-                f"Potential: {summary.get('low_v')} to {summary.get('high_v')} V\n"
-                f"Scan rate: {summary.get('scan_rate_v_s')} V/s; cycles: 1\n\n"
+                "Start CHI 760D internal dummy series",
+                "Allow one real CHI 760D macro series on the INTERNAL DUMMY CELL?\n\n"
+                f"Steps: {summary.get('step_count')}; bounded CV runs: {summary.get('cv_count')}\n"
+                f"Estimated duration: {summary.get('estimated_duration_s')} s\n\n"
                 "Confirm the electrode leads are disconnected, chi760d.exe is closed, "
                 "and you can reach the CHI Stop button. External samples are not allowed.",
                 parent=root,
@@ -395,7 +395,7 @@ class BridgeState:
                     else "sdk_discovery_only"
                 ),
                 "experiments_enabled": desktop_status.get("experiment_control_enabled") is True,
-                "experiment_scope": "internal_dummy_cv_only",
+                "experiment_scope": "internal_dummy_bounded_cv_series",
                 "remote_stop_available": False,
                 "raman_enabled": False,
                 "laser_enabled": False,
@@ -901,7 +901,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--enable-chi760d-dummy",
         action="store_true",
-        help="Enable only the bounded CHI 760D internal-dummy CV workflow.",
+        help="Enable only the bounded CHI 760D internal-dummy CV/wait series workflow.",
     )
     args = parser.parse_args(argv)
 
@@ -939,7 +939,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"SpectraLoop local bridge {BRIDGE_VERSION}")
     print(f"Listening only on http://127.0.0.1:{port}")
     if args.enable_chi760d_dummy:
-        print("Mode: CHI 760D internal-dummy CV enabled; external-cell experiments are locked")
+        print("Mode: CHI 760D internal-dummy CV/wait series enabled; external-cell experiments are locked")
     else:
         print("Mode: SDK discovery only; experiments are disabled")
     if not args.no_browser:

@@ -169,7 +169,7 @@ function refreshCapabilities() {
     .join("");
   const modelNotes = {
     "760B": "CV and i-t are available for protocol planning. Live 760B control is not configured, so selecting this model cannot interrupt its current measurement.",
-    "760D": "The documented profile is available for planning. Real execution remains limited to the separately gated internal-dummy CV commissioning route.",
+    "760D": "The documented profile is available for planning. Real execution remains limited to the separately gated internal-dummy CV/wait commissioning series.",
     "760E": "Documented, derived, desktop, and verify-SDK functions are shown separately. Selecting a function does not by itself authorize hardware I/O.",
   };
   document.querySelector("#profile-note").textContent = modelNotes[model];
@@ -223,7 +223,7 @@ function renderSelectedAdapter(snapshot) {
       ? "Internal-dummy adapter ready"
       : "Desktop adapter unavailable";
     instrumentDetail.textContent = desktop.blocker
-      || "The 760D route is restricted to an explicitly approved internal-dummy CV on the Electrochemistry page.";
+      || "The 760D route is restricted to an explicitly approved internal-dummy CV/wait series on the Electrochemistry page.";
   } else if (!snapshot) {
     instrumentState.textContent = "Unavailable";
     instrumentDetail.textContent = "No instrument request was made.";

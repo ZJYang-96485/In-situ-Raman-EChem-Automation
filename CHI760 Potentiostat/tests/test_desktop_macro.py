@@ -9,7 +9,9 @@ from chi760.desktop_macro import (
     CHI760DDesktopController,
     DesktopMacroError,
     DummyCVPlan,
+    DummySeriesPlan,
     render_dummy_cv_macro,
+    render_dummy_series_macro,
 )
 
 
@@ -37,6 +39,25 @@ def valid_protocol() -> dict[str, object]:
             }
         ],
     }
+
+
+def valid_series_protocol() -> dict[str, object]:
+    protocol = valid_protocol()
+    cv_step = protocol["steps"][0]  # type: ignore[index]
+    protocol["protocol_name"] = "760D two-CV commissioning series"
+    protocol["steps"] = [
+        cv_step,
+        {
+            "source_technique": "wait",
+            "name": "Cell-off delay",
+            "parameters": {"duration_s": 5},
+        },
+        {
+            **cv_step,  # type: ignore[dict-item]
+            "name": "Second bounded CV",
+        },
+    ]
+    return protocol
 
 
 class FakeProcess:
@@ -90,6 +111,19 @@ class DesktopMacroTests(unittest.TestCase):
         self.assertIn("celloff\ndummyoff\n", macro)
         self.assertNotIn("fileoverride", macro)
         self.assertNotIn("noabort", macro)
+
+    def test_series_macro_sequences_bounded_cv_and_cell_off_delays(self) -> None:
+        plan = DummySeriesPlan.from_web_protocol(valid_series_protocol())
+        macro = render_dummy_series_macro(plan, self.data_root)
+
+        self.assertEqual(2, macro.count("tech:cv\n"))
+        self.assertEqual(2, macro.count("run\n"))
+        self.assertIn("celloff\ndelay:5\n", macro)
+        self.assertIn("save:step_01_cv.bin\n", macro)
+        self.assertIn("save:step_03_cv.bin\n", macro)
+        self.assertTrue(macro.endswith("celloff\ndummyoff\nbeep\nend\n"))
+        self.assertEqual(3, plan.public_summary()["step_count"])
+        self.assertEqual(2, plan.public_summary()["cv_count"])
 
     def test_prepare_writes_files_without_launching_or_allowing_queue_spam(self) -> None:
         controller = self.controller(enabled=False)
@@ -161,7 +195,29 @@ class DesktopMacroTests(unittest.TestCase):
         with self.assertRaisesRegex(DesktopMacroError, "could not start"):
             controller.execute(token)
 
-        self.assertEqual("CV", controller.preparation_summary(token)["technique"])
+        self.assertEqual("SERIES", controller.preparation_summary(token)["technique"])
+
+    def test_controller_prepares_multi_step_series_without_launching(self) -> None:
+        controller = self.controller(enabled=False)
+
+        prepared = controller.prepare(valid_series_protocol(), self.data_root)
+
+        self.assertEqual(3, prepared["summary"]["step_count"])
+        self.assertEqual(2, prepared["summary"]["cv_count"])
+        self.assertEqual([], self.launches)
+        macro = next((self.data_root / "runs").rglob("*.mcr")).read_text(encoding="ascii")
+        self.assertEqual(2, macro.count("tech:cv"))
+
+    def test_series_rejects_unsupported_steps_and_excessive_waits(self) -> None:
+        protocol = valid_series_protocol()
+        protocol["steps"][1]["source_technique"] = "ocp"  # type: ignore[index]
+        with self.assertRaisesRegex(DesktopMacroError, "only bounded CV and wait"):
+            DummySeriesPlan.from_web_protocol(protocol)
+
+        protocol = valid_series_protocol()
+        protocol["steps"][1]["parameters"]["duration_s"] = 301  # type: ignore[index]
+        with self.assertRaisesRegex(DesktopMacroError, "delay must be"):
+            DummySeriesPlan.from_web_protocol(protocol)
 
     def test_external_or_broad_protocols_are_rejected(self) -> None:
         protocol = valid_protocol()

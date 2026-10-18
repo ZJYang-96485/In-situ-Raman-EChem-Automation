@@ -79,19 +79,22 @@ by renaming the executable or folder.
 ## CHI 760D internal-dummy commissioning path
 
 The separate `Start SpectraLoop 760D.cmd` launcher disables the 760E SDK worker
-and enables one constrained desktop-macro workflow. The executable is found
+and enables one constrained desktop-macro series workflow. The executable is found
 relative to the repository (or supplied through `SPECTRALOOP_CHI760D_EXE`) and
 must match the audited CHI 760D v23.01 SHA-256 before the bridge will prepare or
 launch anything.
 
-The first commissioning scope is deliberately narrow:
+The commissioning scope is deliberately narrow:
 
-- exactly one CV step and one cycle;
+- one to eight bounded steps, each either a one-cycle CV or a cell-off delay;
+- at least one CV, no delay longer than 300 seconds, and an estimated total
+  duration no longer than 900 seconds;
 - CHI internal dummy cell only, with external electrode leads disconnected;
 - all potentials limited to +/-0.25 V;
 - scan rate limited to 0.01-0.2 V/s and step size to 0.001-0.01 V;
 - Raman and iR compensation disabled;
-- unique run directory and no `fileoverride` or raw macro input;
+- unique output names for every CV in a unique run directory, with no
+  `fileoverride` or raw macro input;
 - CHI overflow abort enabled, followed by `celloff` and `dummyoff` cleanup;
 - browser confirmations plus a separate local Windows approval immediately
   before `chi760d.exe /runmacro:...` is launched.

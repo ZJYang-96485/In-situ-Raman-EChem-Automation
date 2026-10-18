@@ -27,7 +27,7 @@
       instrumentDetail = desktop760d.blocker
         || (desktop760d.active?.running
           ? `Run ${desktop760d.active.run_label} is active in the CHI desktop.`
-          : "The audited desktop adapter is limited to an explicitly approved internal-dummy CV.");
+          : "The audited desktop adapter is limited to an explicitly approved internal-dummy CV/wait series.");
     } else {
       instrumentLabel = sdkReady
         ? `${instrument.target || "CHI 760E"} - SDK check ready`
@@ -58,7 +58,7 @@
       dummyDetail: desktop760d.blocker
         || (desktop760d.active?.running
           ? `Run ${desktop760d.active.run_label} is active in the CHI desktop.`
-          : "The audited CHI 760D executable is ready for an internal-dummy CV."),
+          : "The audited CHI 760D executable is ready for an internal-dummy CV/wait series."),
     };
   }
 
@@ -184,7 +184,7 @@
       elements.confirmationFieldset.disabled = !view.discoveryEnabled;
       labeledStatus(
         elements.runnerState,
-        view.dummyReady && benchAvailable ? "Internal-dummy CV ready" : "760D execution locked",
+        view.dummyReady && benchAvailable ? "Internal-dummy series ready" : "760D execution locked",
         view.dummyReady && benchAvailable ? "safe" : "amber",
       );
       elements.runnerDetail.textContent = benchAvailable
@@ -310,13 +310,13 @@
         return;
       }
       elements.prepareButton.disabled = true;
-      elements.runnerActionStatus.textContent = "Validating the bounded protocol and reserving a unique run folder...";
+      elements.runnerActionStatus.textContent = "Validating the bounded series and reserving a unique run folder...";
       elements.runnerActionStatus.style.color = "var(--warning)";
       try {
         const result = await client.prepare760DDummyCV(protocolCore.buildValidatedPlan());
         preparationToken = result.preparation.preparation_token;
         const summary = result.preparation.summary;
-        elements.runnerActionStatus.textContent = `Prepared ${result.preparation.run_label}: ${summary.low_v} to ${summary.high_v} V at ${summary.scan_rate_v_s} V/s. Check every confirmation to start.`;
+        elements.runnerActionStatus.textContent = `Prepared ${result.preparation.run_label}: ${summary.step_count} steps, ${summary.cv_count} bounded CV runs, approximately ${summary.estimated_duration_s} s. Check every confirmation to start.`;
         elements.runnerActionStatus.style.color = "var(--safe)";
       } catch (error) {
         preparationToken = null;

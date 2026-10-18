@@ -1,6 +1,7 @@
 """Constrained CHI 760D desktop-macro automation.
 
-This adapter intentionally supports only one short internal-dummy-cell CV.  It
+This adapter intentionally supports only a short internal-dummy-cell series of
+bounded CV steps and non-energizing delays.  It
 does not accept raw macro text, arbitrary executable paths from the browser, or
 external-cell experiments.  The desktop executable is verified against the
 audited repository copy before a macro can be prepared or launched.
@@ -27,6 +28,9 @@ CHI760D_APPROVED_SHA256 = (
 MAX_DUMMY_ABS_POTENTIAL_V = 0.25
 MIN_DUMMY_SCAN_RATE_V_S = 0.01
 MAX_DUMMY_SCAN_RATE_V_S = 0.2
+MAX_DUMMY_SERIES_STEPS = 8
+MAX_DUMMY_WAIT_S = 300
+MAX_DUMMY_SERIES_ESTIMATED_S = 900.0
 
 
 class DesktopMacroError(RuntimeError):
@@ -146,20 +150,132 @@ class DummyCVPlan:
             "cycles": self.cycles,
         }
 
+    def estimated_duration_s(self) -> float:
+        distance_v = (
+            abs(self.high_v - self.initial_v)
+            + abs(self.high_v - self.low_v)
+            + abs(self.final_v - self.low_v)
+        )
+        return distance_v / self.scan_rate_v_s + 1.0
+
+
+@dataclass(frozen=True)
+class DummyWaitStep:
+    duration_s: int
+
+    def public_summary(self) -> dict[str, Any]:
+        return {
+            "technique": "WAIT",
+            "cell": "off",
+            "duration_s": self.duration_s,
+        }
+
+
+DummySeriesStep = DummyCVPlan | DummyWaitStep
+
+
+@dataclass(frozen=True)
+class DummySeriesPlan:
+    protocol_name: str
+    steps: tuple[DummySeriesStep, ...]
+
+    @classmethod
+    def from_web_protocol(cls, protocol: Mapping[str, Any]) -> "DummySeriesPlan":
+        target_model = str(
+            protocol.get("target_model") or protocol.get("target_platform") or ""
+        ).upper().replace("CHI", "").strip()
+        if target_model != "760D":
+            raise DesktopMacroError(
+                "The desktop commissioning workflow requires target model CHI 760D."
+            )
+        if protocol.get("bench_state") != "available":
+            raise DesktopMacroError(
+                "The bench is locked for offline planning; mark it available only after the current measurement ends."
+            )
+        validation = protocol.get("validation")
+        if not isinstance(validation, Mapping) or validation.get("valid") is not True:
+            raise DesktopMacroError("The browser protocol must pass validation first.")
+        name = protocol.get("protocol_name")
+        if not isinstance(name, str) or not name.strip() or len(name) > 100:
+            raise DesktopMacroError("The protocol name must contain 1-100 characters.")
+        ir = protocol.get("ir_compensation")
+        if not isinstance(ir, Mapping) or ir.get("enabled") is not False:
+            raise DesktopMacroError("Disable iR compensation for the 760D dummy series.")
+        raman = protocol.get("raman_sync")
+        if not isinstance(raman, Mapping) or raman.get("policy") != "none":
+            raise DesktopMacroError("Set Raman timing to None for the 760D dummy series.")
+        raw_steps = protocol.get("steps")
+        if not isinstance(raw_steps, list) or not 1 <= len(raw_steps) <= MAX_DUMMY_SERIES_STEPS:
+            raise DesktopMacroError(
+                f"The 760D dummy series requires 1-{MAX_DUMMY_SERIES_STEPS} steps."
+            )
+
+        parsed: list[DummySeriesStep] = []
+        cv_count = 0
+        for raw_step in raw_steps:
+            if not isinstance(raw_step, Mapping):
+                raise DesktopMacroError("Every 760D series step must be an object.")
+            technique = raw_step.get("source_technique")
+            if technique == "cv":
+                single_protocol = dict(protocol)
+                single_protocol["steps"] = [raw_step]
+                parsed.append(DummyCVPlan.from_web_protocol(single_protocol))
+                cv_count += 1
+            elif technique == "wait":
+                parameters = raw_step.get("parameters")
+                if not isinstance(parameters, Mapping):
+                    raise DesktopMacroError("The wait parameters are missing.")
+                duration_s = _integer(parameters, "duration_s")
+                if not 1 <= duration_s <= MAX_DUMMY_WAIT_S:
+                    raise DesktopMacroError(
+                        f"A 760D series delay must be 1-{MAX_DUMMY_WAIT_S} seconds."
+                    )
+                parsed.append(DummyWaitStep(duration_s))
+            else:
+                raise DesktopMacroError(
+                    "The first 760D series supports only bounded CV and wait steps."
+                )
+        if cv_count == 0:
+            raise DesktopMacroError("The 760D dummy series requires at least one CV step.")
+        plan = cls(name.strip(), tuple(parsed))
+        if plan.estimated_duration_s() > MAX_DUMMY_SERIES_ESTIMATED_S:
+            raise DesktopMacroError(
+                f"The 760D dummy series is limited to about {MAX_DUMMY_SERIES_ESTIMATED_S:g} seconds."
+            )
+        return plan
+
+    def estimated_duration_s(self) -> float:
+        return sum(
+            step.estimated_duration_s()
+            if isinstance(step, DummyCVPlan)
+            else float(step.duration_s)
+            for step in self.steps
+        )
+
+    def public_summary(self) -> dict[str, Any]:
+        return {
+            "technique": "SERIES",
+            "cell": "internal_dummy",
+            "step_count": len(self.steps),
+            "cv_count": sum(isinstance(step, DummyCVPlan) for step in self.steps),
+            "estimated_duration_s": round(self.estimated_duration_s(), 3),
+            "steps": [step.public_summary() for step in self.steps],
+        }
+
 
 @dataclass
 class PreparedDummyRun:
     token: str
-    plan: DummyCVPlan
+    plan: DummySeriesPlan
     writer: RunWriter
     macro_path: Path
-    text_output: Path
-    binary_output: Path
+    text_outputs: tuple[Path, ...]
+    binary_outputs: tuple[Path, ...]
     prepared_at: datetime
 
 
 class CHI760DDesktopController:
-    """Prepare and launch a single allowlisted CHI 760D internal-dummy CV."""
+    """Prepare and launch an allowlisted CHI 760D internal-dummy series."""
 
     def __init__(
         self,
@@ -194,14 +310,14 @@ class CHI760DDesktopController:
             ),
             "executable_verified": verified,
             "experiment_control_enabled": verified and self.execution_enabled,
-            "scope": "internal_dummy_cv_only",
+            "scope": "internal_dummy_bounded_cv_series",
             "remote_stop_available": False,
             "hardware_calls": self.hardware_calls,
             "blocker": blocker
             or (
                 None
                 if self.execution_enabled
-                else "Start the dedicated 760D launcher to enable the internal-dummy test."
+                else "Start the dedicated 760D launcher to enable the internal-dummy series."
             ),
             "active": active,
         }
@@ -215,7 +331,7 @@ class CHI760DDesktopController:
         root = Path(data_root)
         if not root.is_absolute() or not root.is_dir():
             raise DesktopMacroError("Choose an available storage folder first.")
-        plan = DummyCVPlan.from_web_protocol(protocol)
+        plan = DummySeriesPlan.from_web_protocol(protocol)
         with self._lock:
             if self._prepared:
                 raise DesktopMacroError(
@@ -227,10 +343,14 @@ class CHI760DDesktopController:
             store.ensure_layout()
             writer = store.create_run()
             writer.write_protocol_once(dict(protocol))
-            macro_path = writer.paths.directory / "chi760d_internal_dummy_cv.mcr"
-            text_output = writer.paths.directory / "chi760d_internal_dummy_cv.txt"
-            binary_output = writer.paths.directory / "chi760d_internal_dummy_cv.bin"
-            macro = render_dummy_cv_macro(plan, writer.paths.directory)
+            macro_path = writer.paths.directory / "chi760d_internal_dummy_series.mcr"
+            text_outputs = tuple(
+                writer.paths.directory / f"step_{index:02d}_cv.txt"
+                for index, step in enumerate(plan.steps, start=1)
+                if isinstance(step, DummyCVPlan)
+            )
+            binary_outputs = tuple(path.with_suffix(".bin") for path in text_outputs)
+            macro = render_dummy_series_macro(plan, writer.paths.directory)
             with macro_path.open("x", encoding="ascii", newline="\r\n") as stream:
                 stream.write(macro)
             token = secrets.token_urlsafe(24)
@@ -239,8 +359,8 @@ class CHI760DDesktopController:
                 plan=plan,
                 writer=writer,
                 macro_path=macro_path,
-                text_output=text_output,
-                binary_output=binary_output,
+                text_outputs=text_outputs,
+                binary_outputs=binary_outputs,
                 prepared_at=datetime.now(timezone.utc),
             )
             self._prepared[token] = prepared
@@ -283,10 +403,10 @@ class CHI760DDesktopController:
         prepared.writer.write_metadata(
             {
                 "started_at": started_at,
-                "units": {"potential": "V", "scan_rate": "V/s"},
-                "technique": "CV",
+                "units": {"potential": "V", "scan_rate": "V/s", "time": "s"},
+                "technique": "SERIES",
                 "parameters": prepared.plan.public_summary(),
-                "software_version": "SpectraLoop-CHI760D-macro-0.1",
+                "software_version": "SpectraLoop-CHI760D-macro-0.2",
                 "chi_identity": {
                     "model": "CHI 760D",
                     "verification": "approved_desktop_executable",
@@ -298,7 +418,7 @@ class CHI760DDesktopController:
             {
                 "operation": "launch_approved_chi760d_macro",
                 "started_at": started_at,
-                "scope": "internal_dummy_cv_only",
+                "scope": "internal_dummy_bounded_cv_series",
                 "remote_stop_available": False,
             }
         )
@@ -329,8 +449,9 @@ class CHI760DDesktopController:
                 "run_label": prepared.writer.paths.directory.name,
                 "running": return_code is None,
                 "process_return_code": return_code,
-                "text_output_detected": prepared.text_output.is_file(),
-                "binary_output_detected": prepared.binary_output.is_file(),
+                "text_outputs_detected": sum(path.is_file() for path in prepared.text_outputs),
+                "binary_outputs_detected": sum(path.is_file() for path in prepared.binary_outputs),
+                "expected_output_count": len(prepared.text_outputs),
             }
 
     def _verify_executable(self) -> tuple[bool, str | None]:
@@ -345,20 +466,17 @@ class CHI760DDesktopController:
         return True, None
 
 
-def render_dummy_cv_macro(plan: DummyCVPlan, run_directory: Path) -> str:
-    """Render only documented CHI commands from typed values."""
-
+def _safe_macro_directory(run_directory: Path) -> str:
     directory = run_directory.resolve()
     text = str(directory)
     if any(character in text for character in "\r\n;#"):
         raise DesktopMacroError("The selected data path contains a macro control character.")
+    return text
+
+
+def _dummy_cv_commands(plan: DummyCVPlan) -> list[str]:
     direction = "p" if plan.high_v - plan.initial_v <= plan.initial_v - plan.low_v else "n"
-    lines = [
-        "; SpectraLoop generated: CHI 760D internal dummy CV only",
-        f"folder:{text}",
-        "dummyon",
-        "celloff",
-        "abortov",
+    return [
         "tech:cv",
         f"ei:{_number(plan.initial_v)}",
         f"eh:{_number(plan.high_v)}",
@@ -369,6 +487,47 @@ def render_dummy_cv_macro(plan: DummyCVPlan, run_directory: Path) -> str:
         f"si:{_number(plan.step_size_v)}",
         "qt:1",
         "autosens",
+    ]
+
+
+def render_dummy_series_macro(plan: DummySeriesPlan, run_directory: Path) -> str:
+    """Render a bounded series from typed steps and documented macro commands."""
+
+    lines = [
+        "; SpectraLoop generated: CHI 760D internal dummy bounded CV series",
+        f"folder:{_safe_macro_directory(run_directory)}",
+        "dummyon",
+        "celloff",
+        "abortov",
+    ]
+    for index, step in enumerate(plan.steps, start=1):
+        lines.append(f"; step {index}")
+        if isinstance(step, DummyWaitStep):
+            lines.extend(["celloff", f"delay:{step.duration_s}"])
+            continue
+        lines.extend(_dummy_cv_commands(step))
+        lines.extend(
+            [
+                "run",
+                f"save:step_{index:02d}_cv.bin",
+                f"tsave:step_{index:02d}_cv.txt",
+                "celloff",
+            ]
+        )
+    lines.extend(["celloff", "dummyoff", "beep", "end"])
+    return "\n".join(lines) + "\n"
+
+
+def render_dummy_cv_macro(plan: DummyCVPlan, run_directory: Path) -> str:
+    """Render the legacy one-CV commissioning macro."""
+
+    lines = [
+        "; SpectraLoop generated: CHI 760D internal dummy CV only",
+        f"folder:{_safe_macro_directory(run_directory)}",
+        "dummyon",
+        "celloff",
+        "abortov",
+        *_dummy_cv_commands(plan),
         "run",
         "save:chi760d_internal_dummy_cv.bin",
         "tsave:chi760d_internal_dummy_cv.txt",
