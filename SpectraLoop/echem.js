@@ -1,5 +1,37 @@
 const echemViews = [...document.querySelectorAll("[data-echem-view]")];
 const echemSwitches = [...document.querySelectorAll("[data-view-target]")];
+let simulatorRecoveryPromise = null;
+
+function ensureSimulationCore() {
+  const existing = globalThis.SpectraLoopSimulatorCore;
+  if (existing && typeof existing.buildSimulationSession === "function") {
+    return Promise.resolve(existing);
+  }
+  if (simulatorRecoveryPromise) return simulatorRecoveryPromise;
+
+  simulatorRecoveryPromise = new Promise((resolve, reject) => {
+    const source = new URL("simulator.js", window.location.href);
+    source.searchParams.set("v", "echem-simulator-3");
+    source.searchParams.set("recovery", Date.now().toString());
+    const script = document.createElement("script");
+    script.src = source.href;
+    script.onload = () => {
+      const recovered = globalThis.SpectraLoopSimulatorCore;
+      if (recovered && typeof recovered.buildSimulationSession === "function") {
+        resolve(recovered);
+        return;
+      }
+      simulatorRecoveryPromise = null;
+      reject(new Error("The simulator module loaded without its required function."));
+    };
+    script.onerror = () => {
+      simulatorRecoveryPromise = null;
+      reject(new Error("The simulator module could not be downloaded."));
+    };
+    document.head.append(script);
+  });
+  return simulatorRecoveryPromise;
+}
 
 function showEchemView(name, updateUrl = true) {
   const target = name === "data" ? "data" : "protocol";
@@ -17,7 +49,7 @@ function showEchemView(name, updateUrl = true) {
   }
 }
 
-function runConnectionFreeSimulation() {
+async function runConnectionFreeSimulation() {
   const button = document.querySelector("#run-simulation");
   const status = document.querySelector("#simulation-builder-status");
   const plan = globalThis.SpectraLoopProtocolCore.buildValidatedPlan();
@@ -30,10 +62,7 @@ function runConnectionFreeSimulation() {
   button.textContent = "Simulating…";
   status.textContent = "Generating deterministic synchronized data…";
   try {
-    const simulator = globalThis.SpectraLoopSimulatorCore;
-    if (!simulator || typeof simulator.buildSimulationSession !== "function") {
-      throw new Error("The simulator module did not load. Refresh the page with Ctrl+F5 and try again.");
-    }
+    const simulator = await ensureSimulationCore();
     const scenario = document.querySelector("#simulation-scenario").value;
     const session = simulator.buildSimulationSession(plan, { scenario });
     globalThis.SpectraLoopMonitorCore.loadSimulationSession(session, { autoplay: true });
@@ -82,4 +111,9 @@ document.querySelector("#protocol-view").addEventListener("click", (event) => {
   if (event.target.closest("#add-step, #load-protocol, button[data-action]")) markSimulationStale();
 });
 
-globalThis.SpectraLoopEchemCore = { markSimulationStale, runConnectionFreeSimulation, showEchemView };
+globalThis.SpectraLoopEchemCore = {
+  ensureSimulationCore,
+  markSimulationStale,
+  runConnectionFreeSimulation,
+  showEchemView,
+};

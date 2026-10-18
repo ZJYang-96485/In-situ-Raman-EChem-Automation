@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const { stepDefinitions } = require("./protocols.js");
 const { buildSimulationSession, evaluateIRFractions } = require("./simulator.js");
@@ -167,11 +168,51 @@ test("invalid trial values and invalid protocols cannot be accepted silently", (
 test("electrochemistry page loads the cache-busted simulator before its runner", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
   const runner = fs.readFileSync(path.join(__dirname, "echem.js"), "utf8");
-  const simulatorAsset = "simulator.js?v=echem-simulator-2";
-  const runnerAsset = "echem.js?v=echem-simulator-2";
+  const simulatorAsset = "simulator.js?v=echem-simulator-3";
+  const runnerAsset = "echem.js?v=echem-simulator-3";
 
   assert.ok(html.indexOf(simulatorAsset) >= 0);
   assert.ok(html.indexOf(simulatorAsset) < html.indexOf(runnerAsset));
-  assert.match(runner, /typeof simulator\.buildSimulationSession !== "function"/);
-  assert.match(runner, /Refresh the page with Ctrl\+F5/);
+  assert.match(runner, /async function runConnectionFreeSimulation/);
+  assert.match(runner, /await ensureSimulationCore\(\)/);
+  assert.match(runner, /source\.searchParams\.set\("recovery", Date\.now\(\)\.toString\(\)\)/);
+});
+
+test("runner reloads the simulator with a unique URL when its global is missing", async () => {
+  const inertElement = { addEventListener() {} };
+  let appendedSource = null;
+  const context = {
+    URL,
+    URLSearchParams,
+    window: {
+      location: {
+        href: "https://spectraloop.org/echem.html?view=protocol",
+        search: "?view=protocol",
+      },
+      history: { replaceState() {} },
+    },
+    document: {
+      querySelectorAll() { return []; },
+      querySelector() { return inertElement; },
+      createElement() { return {}; },
+      head: {
+        append(script) {
+          appendedSource = script.src;
+          context.SpectraLoopSimulatorCore = { buildSimulationSession() {} };
+          script.onload();
+        },
+      },
+    },
+  };
+  context.globalThis = context;
+  vm.createContext(context);
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, "echem.js"), "utf8"),
+    context,
+  );
+
+  const recovered = await context.SpectraLoopEchemCore.ensureSimulationCore();
+
+  assert.equal(typeof recovered.buildSimulationSession, "function");
+  assert.match(appendedSource, /simulator\.js\?v=echem-simulator-3&recovery=\d+/);
 });

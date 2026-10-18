@@ -452,6 +452,7 @@ class WebBridgeTests(unittest.TestCase):
         text = launcher.read_text(encoding="utf-8")
 
         self.assertNotIn("--enable-chi760e-commissioning", text)
+        self.assertIn("app=spectraloop-20261018-3", text)
 
     def test_760e_prepare_start_status_stop_and_result_are_separately_gated(self) -> None:
         controller = Fake760ECommissioningController()
