@@ -116,7 +116,7 @@ function buildDefaultProtocolPlan() {
     schema_version: "0.3",
     protocol_name: "Browser smoke-test protocol",
     execution_enabled: false,
-    raman_sync: { policy: "after_equilibration", timing_quality: "software_best_effort" },
+    raman_sync: { policy: "none", timing_quality: "software_best_effort" },
     ir_compensation: irSettings(),
     steps,
   };
@@ -300,15 +300,15 @@ function smokeCases() {
       },
     },
     {
-      id: "synchronized-contract",
+      id: "echem-data-contract",
       group: "Data integrity",
-      title: "Synchronized export preserves timing provenance",
+      title: "EChem export preserves timing provenance",
       run: () => {
         const payload = globalThis.SpectraLoopMonitorCore.buildSessionPayload();
         requireCondition(payload.hardware_connected === false && payload.timing_quality === "simulated_unverified", "preview timing was overstated");
-        requireCondition(payload.frame_alignments.every((link) => Number.isFinite(link.delta_t_s)), "signed timing offsets are missing");
         requireCondition(payload.electrochemistry.every((record) => Number.isFinite(record.source_timestamp_s)), "electrochemistry source timestamps are missing");
-        return `${payload.electrochemistry.length} EChem points and ${payload.raman.length} Raman frames retained with explicit alignment offsets.`;
+        requireCondition(Array.isArray(payload.raman) && payload.raman.length === 0, "the EChem-only export contains Raman frames");
+        return `${payload.electrochemistry.length} EChem points retained; Raman is not configured.`;
       },
     },
     {

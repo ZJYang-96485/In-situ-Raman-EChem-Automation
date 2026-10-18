@@ -186,6 +186,48 @@ def browser_760e_confirmations() -> dict[str, bool]:
     }
 
 
+def connection_free_session() -> dict[str, object]:
+    return {
+        "schema_version": "0.2-simulation",
+        "session_id": "simulation-test",
+        "generated_at": "2026-10-18T15:30:00+00:00",
+        "terminal_state": "simulated_complete",
+        "execution_mode": "connection_free_simulation",
+        "hardware_connected": False,
+        "hardware_calls": 0,
+        "protocol_plan": {
+            "protocol_name": "EChem / catalyst A",
+            "target_model": "760E",
+            "raman_sync": {"policy": "none"},
+        },
+        "simulator": {"version": "test", "scenario": "standard"},
+        "instruments": {"electrochemistry": {"model": "CHI 760E"}},
+        "electrochemistry": [
+            {
+                "elapsed_s": 0.0,
+                "step_index": 1,
+                "source_technique": "cv",
+                "potential_v": 0.0,
+                "current_a": 1e-6,
+                "chronocoulometry_c": 0.0,
+            },
+            {
+                "elapsed_s": 0.5,
+                "step_index": 1,
+                "source_technique": "cv",
+                "potential_v": 0.1,
+                "current_a": 2e-6,
+                "chronocoulometry_c": 7.5e-7,
+            },
+        ],
+        "raman": [],
+        "events": [
+            {"elapsed_s": 0.0, "type": "simulation_started"},
+            {"elapsed_s": 0.5, "type": "simulation_finished"},
+        ],
+    }
+
+
 class WebBridgeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -385,6 +427,55 @@ class WebBridgeTests(unittest.TestCase):
         reloaded = StorageSettings(self.config_path)
         self.assertEqual(self.selected_folder.resolve(), reloaded.root)
 
+    def test_ec_only_simulation_is_saved_by_date_task_and_trial(self) -> None:
+        with self.assertRaises(HTTPError) as caught:
+            self.request(
+                "/v1/simulations/save",
+                method="POST",
+                payload={"session": connection_free_session()},
+            )
+        self.assertEqual("storage_required", self.error_payload(caught.exception)["error"]["code"])  # type: ignore[index]
+
+        self.state.storage.configure(self.selected_folder)
+        first_session = connection_free_session()
+        first_session["notes"] = "x" * 70_000
+        first_response, first_raw = self.request(
+            "/v1/simulations/save",
+            method="POST",
+            payload={"session": first_session},
+        )
+        second_response, second_raw = self.request(
+            "/v1/simulations/save",
+            method="POST",
+            payload={"session": connection_free_session()},
+        )
+        first = json.loads(first_raw)["simulation"]
+        second = json.loads(second_raw)["simulation"]
+
+        self.assertEqual(200, first_response.status)
+        self.assertEqual(200, second_response.status)
+        self.assertRegex(first["folder"], r"^simulations/\d{4}-\d{2}-\d{2}/EChem-catalyst A/trial-001$")
+        self.assertTrue((self.selected_folder / Path(first["folder"]) / "simulation_session.json").is_file())
+        self.assertTrue((self.selected_folder / Path(first["folder"]) / "echem_raw.csv").is_file())
+        self.assertTrue((self.selected_folder / Path(first["folder"]) / "metadata.json").is_file())
+        self.assertTrue(second["folder"].endswith("trial-002"))
+        self.assertNotIn(str(self.selected_folder), first_raw.decode("utf-8"))
+        self.assertFalse((self.selected_folder / "runs").exists())
+
+    def test_simulation_save_rejects_hardware_or_raman_data(self) -> None:
+        self.state.storage.configure(self.selected_folder)
+        for field, value in (("hardware_connected", True), ("raman", [{"frame_id": "R001"}])):
+            session = connection_free_session()
+            session[field] = value
+            with self.subTest(field=field), self.assertRaises(HTTPError) as caught:
+                self.request(
+                    "/v1/simulations/save",
+                    method="POST",
+                    payload={"session": session},
+                )
+            self.assertEqual(400, caught.exception.code)
+            self.assertEqual("invalid_simulation", self.error_payload(caught.exception)["error"]["code"])  # type: ignore[index]
+
     def test_discovery_requires_every_safety_confirmation(self) -> None:
         with self.assertRaises(HTTPError) as caught:
             self.request(
@@ -452,7 +543,7 @@ class WebBridgeTests(unittest.TestCase):
         text = launcher.read_text(encoding="utf-8")
 
         self.assertNotIn("--enable-chi760e-commissioning", text)
-        self.assertIn("app=spectraloop-20261018-3", text)
+        self.assertIn("app=spectraloop-20261018-4", text)
 
     def test_760e_prepare_start_status_stop_and_result_are_separately_gated(self) -> None:
         controller = Fake760ECommissioningController()

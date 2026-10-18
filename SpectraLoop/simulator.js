@@ -1,7 +1,7 @@
 (function initializeSpectraLoopSimulator(root) {
 "use strict";
 
-const SIMULATOR_VERSION = "0.1";
+const SIMULATOR_VERSION = "0.2-ec-only";
 const MAX_SIMULATION_POINTS = 50000;
 const IR_TARGET_FRACTION = 0.95;
 const IR_TRIAL_CEILING = 10;
@@ -335,34 +335,6 @@ function simulateStepSamples(step) {
   throw new Error(`No simulation model exists for ${kind}`);
 }
 
-function buildRamanFrame(midpointS, index, sessionId) {
-  const shiftCm1 = Array.from({ length: 301 }, (_, point) => 300 + point * 5);
-  const peak = (x, center, width, height) => height * Math.exp(-((x - center) ** 2) / (2 * width ** 2));
-  const intensity = shiftCm1.map((shift) => {
-    const state = 1 + index * 0.08;
-    return 140 + 0.035 * shift + peak(shift, 520, 24, 260) + peak(shift, 1005, 34, 190 * state) + peak(shift, 1350, 48, 125 / state) + 6 * Math.sin(shift / 27 + index);
-  });
-  return {
-    session_id: sessionId,
-    source: "raman_simulator",
-    sequence: index,
-    frame_id: `R${String(index + 1).padStart(3, "0")}`,
-    acquisition_start_elapsed_s: Math.max(0, midpointS - 1),
-    acquisition_end_elapsed_s: midpointS + 1,
-    acquisition_midpoint_elapsed_s: midpointS,
-    source_timestamp_s: Math.max(0, midpointS - 1),
-    host_receipt_timestamp_s: midpointS + 1.027,
-    shift_cm_1: shiftCm1,
-    shift_unit: "cm^-1",
-    intensity_au: intensity,
-    intensity_unit: "a.u.",
-    exposure_s: 2,
-    accumulations: 1,
-    trigger_mode: "software_simulated",
-    quality_flags: ["simulated", "timing_unverified"],
-  };
-}
-
 function buildSimulationSession(plan, options = {}) {
   const scenarioKey = options.scenario || "standard";
   const scenario = scenarioDefinitions[scenarioKey];
@@ -376,7 +348,6 @@ function buildSimulationSession(plan, options = {}) {
   const records = [];
   const events = [{ elapsed_s: 0, type: "simulation_started", label: "Simulation started", detail: `${plan.protocol_name} · no device connection` }];
   const irResults = [];
-  const stepEnds = [];
   let cursorS = 0;
   let cumulativeChargeC = 0;
   let previousRecord = null;
@@ -491,7 +462,6 @@ function buildSimulationSession(plan, options = {}) {
     }
 
     cursorS = rounded(stepStartS + result.duration_s);
-    stepEnds.push(cursorS);
     events.push({ elapsed_s: cursorS, type: "step_completed", label: `${step.index}. ${step.name} complete`, detail: `${result.samples.length} simulated points` });
   }
 
@@ -519,19 +489,7 @@ function buildSimulationSession(plan, options = {}) {
     });
   }
 
-  const ramanLimit = 20;
-  const requestedRamanTimes = plan.raman_sync.policy === "none"
-    ? []
-    : plan.raman_sync.policy === "before_and_after_experiment"
-      ? [...new Set([0, cursorS])]
-      : [...new Set(stepEnds.length ? stepEnds : [cursorS])];
   const simulationWarnings = [];
-  if (requestedRamanTimes.length > ramanLimit) {
-    simulationWarnings.push(`Raman frame generation was limited to ${ramanLimit} frames from ${requestedRamanTimes.length} requested step-end frames.`);
-    events.push({ elapsed_s: cursorS, type: "simulation_limit", label: "Raman frame limit reached", detail: simulationWarnings[0] });
-  }
-  const ramanTimes = requestedRamanTimes.slice(0, ramanLimit);
-  const raman = ramanTimes.map((time, index) => buildRamanFrame(time, index, sessionId));
   const hasRde = records.some((record) => record.rde_commanded_rpm > 0);
 
   return {
@@ -547,7 +505,7 @@ function buildSimulationSession(plan, options = {}) {
     protocol_plan: JSON.parse(JSON.stringify(plan)),
     instruments: {
       electrochemistry: { model: "CHI 760E", connection: "not_opened", simulated: true },
-      raman: { connection: "not_opened", simulated: true },
+      raman: { connection: "not_configured", simulated: false },
       rde: { connection: "not_opened", simulated: true, included: hasRde },
     },
     run_error: runError,
@@ -566,7 +524,7 @@ function buildSimulationSession(plan, options = {}) {
       chronocoulometry_c: { method: "trapezoidal", source_channel: "current_a", initial_charge_c: 0, interval: "consecutive finite-current samples" },
     },
     electrochemistry: records,
-    raman,
+    raman: [],
     events: events.sort((first, second) => first.elapsed_s - second.elapsed_s),
   };
 }

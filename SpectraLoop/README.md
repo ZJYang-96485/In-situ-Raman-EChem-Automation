@@ -1,7 +1,9 @@
 # SpectraLoop
 
-SpectraLoop is a dependency-free browser interface for planning coordinated CHI
-760E and operando Raman experiments, with disk-only RDE available as an option.
+SpectraLoop is a dependency-free browser interface for planning CHI 760B, 760D,
+and 760E electrochemistry, with disk-only RDE available as an option. The
+current instrument workspace is EChem-only; a combined Raman workspace is a
+future extension.
 The static pages remain safe when opened by themselves. On the instrument PC,
 an authenticated loopback bridge can provide native storage-folder selection
 and, once a verified vendor adapter exists, an identity-only CHI connection.
@@ -12,7 +14,7 @@ and, once a verified vendor adapter exists, an identity-only CHI connection.
 - `setup.html` — model-profiled instrument, local-bridge/storage, Raman, and
   analysis configuration.
 - `echem.html` — the single electrochemistry workspace. Switch between the CHI
-  760E protocol builder and synchronized electrochemistry/Raman data without
+  protocol builder and EChem data without
   leaving the page. The builder includes offline checks and a connection-free
   protocol execution simulator.
 
@@ -29,16 +31,13 @@ the target has not been reached. Execution remains locked until the installed
 test cell.
 
 The execution simulator uses the current protocol rather than a fixed example.
-It generates deterministic technique-specific CHI data, simulated Raman
-frames, explicit iR trials, derived CC, and commanded-only RDE values. Standard,
+It generates deterministic technique-specific CHI data, explicit iR trials,
+derived CC, and commanded-only RDE values. Standard,
 trial-10, Ru-failure, acquisition-failure, and cleanup-failure scenarios remain
 entirely in the browser and always report zero hardware calls.
 
-The synchronized-data view places only the electrochemistry plot and Raman plot
-side by side on desktop, using a shared time cursor. RDE disk/RPM data and the
-run log are intentionally not displayed there. “Synchronized” means software
-alignment on a simulated shared elapsed-time axis; it does not claim measured
-device timing.
+The EChem-data view presents potential and current on a shared elapsed-time
+cursor. Raman is not generated or displayed in the current workspace.
 
 The compact offline check validates the current builder values. Every result is
 available on demand, and the exported report always records simulation mode and
@@ -55,6 +54,10 @@ dependency-free Python bridge on `127.0.0.1:8765` and opens
 token. The page can then open the normal
 Windows folder picker and persist the chosen data root in the current user's
 local application settings. Users do not need to open VS Code or type a path.
+Successful browser simulations are saved automatically under
+`simulations/YYYY-MM-DD/task name/trial-NNN`; the page shows this relative
+folder after saving. Simulation records remain separate from real instrument
+runs under `runs/`.
 Until the updated public site has been deployed, double-click
 `Start SpectraLoop Local.cmd` instead; it opens the same bundled interface from
 the loopback service and requires no internet connection.

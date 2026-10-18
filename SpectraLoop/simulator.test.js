@@ -124,7 +124,7 @@ test("Ru fallback, acquisition failure, and cleanup failure remain explicit", ()
   assert.match(cleanup.cleanup_error, /cleanup failure/);
 });
 
-test("optional disk RDE remains commanded-only and Raman links keep raw clocks", () => {
+test("optional disk RDE remains commanded-only and simulation is EChem-only", () => {
   const session = buildSimulationSession(plan([
     step("levich_rpm_sweep_ca", 1, {
       rpm_values: "400, 900",
@@ -137,7 +137,9 @@ test("optional disk RDE remains commanded-only and Raman links keep raw clocks",
   assert.equal(session.optional_disk_rde_demo_enabled, true);
   assert.ok(session.electrochemistry.some((record) => record.rde_commanded_rpm === 900));
   assert.ok(session.electrochemistry.every((record) => record.rde_measured_rpm === null));
-  assert.ok(session.raman.every((frame) => Number.isFinite(frame.source_timestamp_s)));
+  assert.equal(session.raman.length, 0);
+  assert.equal(session.instruments.raman.connection, "not_configured");
+  assert.equal(session.instruments.raman.simulated, false);
   assert.ok(session.events.some((event) => event.type === "rde_setpoint" && event.detail.includes("measured RPM unavailable")));
 });
 
@@ -168,8 +170,8 @@ test("invalid trial values and invalid protocols cannot be accepted silently", (
 test("electrochemistry page loads the cache-busted simulator before its runner", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
   const runner = fs.readFileSync(path.join(__dirname, "echem.js"), "utf8");
-  const simulatorAsset = "simulator.js?v=echem-simulator-3";
-  const runnerAsset = "echem.js?v=echem-simulator-3";
+  const simulatorAsset = "simulator.js?v=echem-simulator-4";
+  const runnerAsset = "echem.js?v=echem-simulator-4";
 
   assert.ok(html.indexOf(simulatorAsset) >= 0);
   assert.ok(html.indexOf(simulatorAsset) < html.indexOf(runnerAsset));
@@ -214,7 +216,73 @@ test("runner reloads the simulator with a unique URL when its global is missing"
   const recovered = await context.SpectraLoopEchemCore.ensureSimulationCore();
 
   assert.equal(typeof recovered.buildSimulationSession, "function");
-  assert.match(appendedSource, /simulator\.js\?v=echem-simulator-3&recovery=\d+/);
+  assert.match(appendedSource, /simulator\.js\?v=echem-simulator-4&recovery=\d+/);
+});
+
+test("successful browser simulation is saved and shows its relative folder", async () => {
+  const button = { disabled: false, textContent: "Run simulation", addEventListener() {} };
+  const builderStatus = { textContent: "" };
+  const sessionStatus = { textContent: "" };
+  const inertElement = { addEventListener() {} };
+  const session = {
+    electrochemistry: [{ elapsed_s: 0 }],
+    hardware_connected: false,
+    hardware_calls: 0,
+    raman: [],
+    events: [],
+  };
+  let loadedSession = null;
+  let savedSession = null;
+  const elements = new Map([
+    ["#run-simulation", button],
+    ["#simulation-builder-status", builderStatus],
+    ["#simulation-session-status", sessionStatus],
+    ["#simulation-scenario", { value: "standard" }],
+    ["#protocol-view", inertElement],
+  ]);
+  const context = {
+    URL,
+    URLSearchParams,
+    window: {
+      location: { href: "https://spectraloop.org/echem.html?view=protocol", search: "?view=protocol" },
+      history: { replaceState() {} },
+    },
+    document: {
+      querySelectorAll() { return []; },
+      querySelector(selector) { return elements.get(selector) || inertElement; },
+    },
+    SpectraLoopProtocolCore: {
+      buildValidatedPlan() { return { protocol_name: "EChem test", validation: { valid: true, errors: [] } }; },
+    },
+    SpectraLoopSimulatorCore: {
+      buildSimulationSession() { return session; },
+    },
+    SpectraLoopMonitorCore: {
+      loadSimulationSession(value) { loadedSession = value; },
+    },
+    SpectraLoopEchemBridgeCore: {
+      getClient() {
+        return {
+          async saveSimulation(value) {
+            savedSession = value;
+            return { simulation: { folder: "simulations/2026-10-18/EChem test/trial-001" } };
+          },
+        };
+      },
+    },
+  };
+  context.globalThis = context;
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "echem.js"), "utf8"), context);
+
+  await context.SpectraLoopEchemCore.runConnectionFreeSimulation();
+
+  assert.equal(loadedSession, session);
+  assert.equal(savedSession, session);
+  assert.match(builderStatus.textContent, /saved in simulations\/2026-10-18\/EChem test\/trial-001/);
+  assert.equal(sessionStatus.textContent, "Saved in simulations/2026-10-18/EChem test/trial-001");
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, "Run simulation");
 });
 
 test("classic simulator script can execute again after its global is removed", () => {

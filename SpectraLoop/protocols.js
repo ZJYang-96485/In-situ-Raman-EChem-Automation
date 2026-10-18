@@ -393,7 +393,7 @@ function buildPlan() {
     execution_enabled: false,
     mapping_review_required: true,
     raman_sync: {
-      policy: document.querySelector("#raman-sync").value,
+      policy: "none",
       timing_quality: "software_best_effort",
       hardware_trigger_enabled: false,
     },
@@ -681,7 +681,7 @@ function loadSavedPlan() {
     if (ir.continue_without_ir_on_ru_failure !== undefined && typeof ir.continue_without_ir_on_ru_failure !== "boolean") throw new Error("saved iR fallback flag is invalid");
     steps = restoredSteps;
     document.querySelector("#protocol-name").value = plan.protocol_name || `Saved CHI ${targetModel} protocol`;
-    if (plan.raman_sync?.policy) document.querySelector("#raman-sync").value = plan.raman_sync.policy;
+    document.querySelector("#raman-sync").value = "none";
     document.querySelector("#ir-enabled").checked = ir.enabled ?? false;
     const valueMap = {
       "ir-mode": ir.mode,

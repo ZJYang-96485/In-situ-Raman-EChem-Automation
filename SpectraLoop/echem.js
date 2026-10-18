@@ -11,7 +11,7 @@ function ensureSimulationCore() {
 
   simulatorRecoveryPromise = new Promise((resolve, reject) => {
     const source = new URL("simulator.js", window.location.href);
-    source.searchParams.set("v", "echem-simulator-3");
+    source.searchParams.set("v", "echem-simulator-4");
     source.searchParams.set("recovery", Date.now().toString());
     const script = document.createElement("script");
     script.src = source.href;
@@ -60,14 +60,27 @@ async function runConnectionFreeSimulation() {
   }
   button.disabled = true;
   button.textContent = "Simulating…";
-  status.textContent = "Generating deterministic synchronized data…";
+  status.textContent = "Generating deterministic EChem data…";
   try {
     const simulator = await ensureSimulationCore();
     const scenario = document.querySelector("#simulation-scenario").value;
     const session = simulator.buildSimulationSession(plan, { scenario });
     globalThis.SpectraLoopMonitorCore.loadSimulationSession(session, { autoplay: true });
-    status.textContent = `${session.electrochemistry.length} EChem points and ${session.raman.length} Raman frames generated · 0 hardware calls.`;
     showEchemView("data");
+    const bridgeClient = globalThis.SpectraLoopEchemBridgeCore?.getClient?.();
+    if (!bridgeClient) {
+      status.textContent = `${session.electrochemistry.length} EChem points generated · 0 hardware calls · not saved: check the local bridge and choose a storage folder.`;
+      document.querySelector("#simulation-session-status").textContent = "Not saved · check the local bridge and choose a storage folder";
+    } else {
+      try {
+        const result = await bridgeClient.saveSimulation(session);
+        status.textContent = `${session.electrochemistry.length} EChem points generated · saved in ${result.simulation.folder}.`;
+        document.querySelector("#simulation-session-status").textContent = `Saved in ${result.simulation.folder}`;
+      } catch (saveError) {
+        status.textContent = `${session.electrochemistry.length} EChem points generated · simulation complete but not saved: ${saveError instanceof Error ? saveError.message : String(saveError)}`;
+        document.querySelector("#simulation-session-status").textContent = `Not saved · ${saveError instanceof Error ? saveError.message : String(saveError)}`;
+      }
+    }
   } catch (error) {
     status.textContent = `Simulation stopped: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
@@ -77,7 +90,7 @@ async function runConnectionFreeSimulation() {
 }
 
 function markSimulationStale() {
-  document.querySelector("#simulation-builder-status").textContent = "Protocol or scenario changed · run again to refresh synchronized data.";
+  document.querySelector("#simulation-builder-status").textContent = "Protocol or scenario changed · run again to refresh EChem data.";
   document.querySelector("#simulation-session-status").textContent = "Previous preview/session · current builder values have not been simulated";
   const state = document.querySelector("#simulation-session-state");
   state.textContent = "Rerun needed";

@@ -49,6 +49,7 @@ class RunPaths:
     echem_processed: Path
     instrument_trace: Path
     events: Path
+    simulation_session: Path
 
 
 class RunDataStore:
@@ -114,19 +115,49 @@ class RunDataStore:
         creation is atomic so simultaneous preparations cannot share a trial.
         """
 
+        return self._create_task_trial(
+            self.runs_root,
+            "runs",
+            task_name,
+            timestamp=timestamp,
+        )
+
+    def create_simulation_trial(
+        self,
+        task_name: str,
+        *,
+        timestamp: datetime | None = None,
+    ) -> "RunWriter":
+        """Reserve ``simulations/date/task/trial-NNN`` without overwriting."""
+
+        return self._create_task_trial(
+            self.simulations_root,
+            "simulations",
+            task_name,
+            timestamp=timestamp,
+        )
+
+    def _create_task_trial(
+        self,
+        category_root: Path,
+        category_name: str,
+        task_name: str,
+        *,
+        timestamp: datetime | None,
+    ) -> "RunWriter":
         moment = timestamp or datetime.now().astimezone()
         if moment.tzinfo is None or moment.utcoffset() is None:
             raise ValueError("timestamp must be timezone-aware")
         task_folder = safe_task_folder_name(task_name)
-        task_directory = self.runs_root / moment.strftime("%Y-%m-%d") / task_folder
+        task_directory = category_root / moment.strftime("%Y-%m-%d") / task_folder
         task_directory.mkdir(parents=True, exist_ok=True)
         try:
             task_directory.resolve(strict=True).relative_to(
-                self.runs_root.resolve(strict=True)
+                category_root.resolve(strict=True)
             )
         except ValueError as error:
             raise ValueError(
-                "task folder must remain inside the runs directory"
+                f"task folder must remain inside the {category_name} directory"
             ) from error
 
         existing_numbers = [
@@ -171,6 +202,14 @@ class RunWriter:
             raise FileExistsError(f"refusing to overwrite {self.paths.protocol}")
         _atomic_write_json(self.paths.protocol, protocol, replace=False)
         return self.paths.protocol
+
+    def write_simulation_session_once(self, session: Mapping[str, Any]) -> Path:
+        if self.paths.simulation_session.exists():
+            raise FileExistsError(
+                f"refusing to overwrite {self.paths.simulation_session}"
+            )
+        _atomic_write_json(self.paths.simulation_session, session, replace=False)
+        return self.paths.simulation_session
 
     def write_metadata(self, metadata: Mapping[str, Any]) -> Path:
         missing = sorted(_REQUIRED_METADATA - set(metadata))
@@ -239,6 +278,7 @@ def _paths_for(directory: Path) -> RunPaths:
         echem_processed=directory / "echem_processed.csv",
         instrument_trace=directory / "instrument_trace.jsonl",
         events=directory / "events.jsonl",
+        simulation_session=directory / "simulation_session.json",
     )
 
 

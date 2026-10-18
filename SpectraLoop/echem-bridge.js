@@ -8,6 +8,8 @@
 })(typeof globalThis === "object" ? globalThis : this, function buildEchemBridge() {
   "use strict";
 
+  let activeClient = null;
+
   function describeSnapshot(snapshot, selectedModel = "760E") {
     const storage = snapshot.storage || {};
     const instrument = snapshot.instrument || {};
@@ -264,6 +266,7 @@
       checkMessage("Checking the authenticated bridge at 127.0.0.1:8765…", "warning");
       if (!bridgeApi) {
         client = null;
+        activeClient = null;
         showUnavailable("The bridge client is not present in this deployed site version.");
         checkMessage("Bridge check failed: this deployed page does not include the local bridge client.", "failed");
         elements.refreshButton.disabled = false;
@@ -274,6 +277,7 @@
       const localCookieAuth = browserWindow.location.hostname === "127.0.0.1";
       if (!token && !localCookieAuth) {
         client = null;
+        activeClient = null;
         showUnavailable("A bridge session token is missing. The webpage cannot start a Windows program by itself.");
         checkMessage("Bridge not checked: double-click Start SpectraLoop.cmd on this computer and use the page that it opens. Keep its console window open.", "failed");
         elements.refreshButton.disabled = false;
@@ -286,12 +290,14 @@
           baseUrl: bridgeBaseUrl(),
           cookieAuth: !token && localCookieAuth,
         });
+        activeClient = client;
         renderStatus(await client.status());
         checkMessage("Local bridge responded and authentication succeeded.", "safe");
         elements.actionStatus.textContent = "Bridge verified. No CHI hardware request has been made.";
         elements.actionStatus.style.color = "var(--safe)";
       } catch (error) {
         client = null;
+        activeClient = null;
         showUnavailable(error.message);
         checkMessage(`Bridge check failed: ${error.message}`, "failed");
         elements.actionStatus.textContent = error.message;
@@ -409,5 +415,5 @@
     return { refresh };
   }
 
-  return { describeSnapshot, initialize };
+  return { describeSnapshot, getClient: () => activeClient, initialize };
 });

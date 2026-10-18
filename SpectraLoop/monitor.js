@@ -1,6 +1,6 @@
 const previewDurationS = 120;
 const previewSamplePeriodS = 0.5;
-const previewSessionId = "preview-chi760e-raman";
+const previewSessionId = "preview-chi760e-ec-only";
 
 function rpmAt(timeS) {
   if (timeS < 20) return 0;
@@ -63,38 +63,7 @@ function buildEchemSeries(withRde) {
   return records;
 }
 
-function buildPreviewRaman() {
-  const ramanTimes = [18, 38, 63, 88, 113];
-  return ramanTimes.map((midpointS, frameIndex) => {
-    const shiftCm1 = Array.from({ length: 301 }, (_, index) => 300 + index * 5);
-    const peak = (x, center, width, height) => height * Math.exp(-((x - center) ** 2) / (2 * width ** 2));
-    const intensity = shiftCm1.map((shift) => {
-      const state = 1 + frameIndex * 0.12;
-      return 140 + 0.035 * shift + peak(shift, 520, 24, 260) + peak(shift, 1005, 34, 190 * state) + peak(shift, 1350, 48, 125 / state) + 6 * Math.sin(shift / 27 + frameIndex);
-    });
-    return {
-      session_id: previewSessionId,
-      source: "raman_simulated",
-      sequence: frameIndex,
-      frame_id: `R${String(frameIndex + 1).padStart(3, "0")}`,
-      acquisition_start_elapsed_s: midpointS - 1,
-      acquisition_end_elapsed_s: midpointS + 1,
-      acquisition_midpoint_elapsed_s: midpointS,
-      source_timestamp_s: midpointS - 1,
-      host_receipt_timestamp_s: midpointS + 1.027,
-      shift_cm_1: shiftCm1,
-      shift_unit: "cm^-1",
-      intensity_au: intensity,
-      intensity_unit: "a.u.",
-      exposure_s: 2,
-      accumulations: 1,
-      trigger_mode: "software_simulated",
-      quality_flags: ["simulated", "timing_unverified"],
-    };
-  });
-}
-
-const raman = buildPreviewRaman();
+const raman = [];
 
 function buildPreviewSession(withRde = false) {
   const baseEvents = [
@@ -116,7 +85,7 @@ function buildPreviewSession(withRde = false) {
     protocol_plan: { schema_version: "0.3", identifier: "preview-ca-001", hash: null, hash_status: "not_computed_preview" },
     instruments: {
       electrochemistry: { model: "CHI 760E", serial_number: null, firmware_version: null },
-      raman: { model: null, serial_number: null, firmware_version: null },
+      raman: { connection: "not_configured", simulated: false },
       rde: { model: null, serial_number: null, firmware_version: null },
     },
     optional_disk_rde_demo_enabled: withRde,
@@ -140,8 +109,6 @@ function buildPreviewSession(withRde = false) {
 
 let currentSession = buildPreviewSession(false);
 let echem = currentSession.electrochemistry;
-let currentRaman = currentSession.raman;
-let currentEvents = currentSession.events;
 let durationS = previewDurationS;
 let selectedTimeS = 0;
 let playing = false;
@@ -279,50 +246,11 @@ function drawTimeline() {
   context.stroke();
 }
 
-function drawSpectrum(frame) {
-  const canvas = document.querySelector("#spectrum-canvas");
-  const context = clearCanvas(canvas);
-  if (!frame) {
-    context.fillStyle = "#667887";
-    context.font = "14px Arial";
-    context.textAlign = "center";
-    context.fillText("No Raman acquisition in this protocol", canvas.width / 2, canvas.height / 2);
-    return;
-  }
-  const bounds = { left: 70, right: canvas.width - 24, top: 25, bottom: canvas.height - 52 };
-  const minX = frame.shift_cm_1[0];
-  const maxX = frame.shift_cm_1[frame.shift_cm_1.length - 1];
-  const minY = Math.min(...frame.intensity_au) * 0.95;
-  const maxY = Math.max(...frame.intensity_au) * 1.05;
-  drawAxes(
-    context,
-    bounds,
-    [300, 600, 900, 1200, 1500, 1800].map((value) => ({ value, x: bounds.left + ((value - minX) / (maxX - minX)) * (bounds.right - bounds.left) })),
-    [minY, (minY + maxY) / 2, maxY].map((value) => ({ value: Math.round(value), y: bounds.bottom - ((value - minY) / (maxY - minY)) * (bounds.bottom - bounds.top) })),
-    "Raman shift (cm⁻¹)",
-    "Intensity (a.u.)",
-  );
-  context.strokeStyle = "#7a4fa1";
-  context.lineWidth = 2;
-  context.beginPath();
-  frame.shift_cm_1.forEach((shift, index) => {
-    const x = bounds.left + ((shift - minX) / (maxX - minX)) * (bounds.right - bounds.left);
-    const y = bounds.bottom - ((frame.intensity_au[index] - minY) / (maxY - minY)) * (bounds.bottom - bounds.top);
-    if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
-  });
-  context.stroke();
-}
-
 function updateSelection(timeS) {
   selectedTimeS = Math.max(0, Math.min(durationS, Number.isFinite(timeS) ? timeS : 0));
-  const frame = nearestByTime(currentRaman, "acquisition_midpoint_elapsed_s", selectedTimeS);
-  const offsetS = frame ? frame.acquisition_midpoint_elapsed_s - selectedTimeS : null;
   document.querySelector("#time-slider").value = selectedTimeS;
   document.querySelector("#time-output").textContent = `${formatElapsed(selectedTimeS)} / ${formatElapsed(durationS)}`;
-  document.querySelector("#spectrum-time").textContent = frame ? formatElapsed(frame.acquisition_midpoint_elapsed_s) : "—";
-  document.querySelector("#spectrum-offset").textContent = frame ? `Δt ${offsetS >= 0 ? "+" : ""}${offsetS.toFixed(1)} s` : "No frame";
   drawTimeline();
-  drawSpectrum(frame);
 }
 
 function setPlaying(nextPlaying) {
@@ -348,34 +276,16 @@ function animate(nowMs) {
   animationFrame = requestAnimationFrame(animate);
 }
 
-function buildFrameAlignments() {
-  return currentRaman.map((frame) => {
-    const sample = nearestByTime(echem, "elapsed_s", frame.acquisition_midpoint_elapsed_s);
-    return {
-      raman_frame_id: frame.frame_id,
-      echem_sequence: sample?.sequence ?? null,
-      echem_elapsed_s: sample?.elapsed_s ?? null,
-      delta_t_s: sample ? frame.acquisition_midpoint_elapsed_s - sample.elapsed_s : null,
-      method: "nearest_echem_sample_to_raman_midpoint",
-    };
-  });
-}
-
 function buildSessionPayload() {
   const selectedSample = nearestByTime(echem, "elapsed_s", selectedTimeS);
-  const selectedFrame = nearestByTime(currentRaman, "acquisition_midpoint_elapsed_s", selectedTimeS);
   return {
     ...currentSession,
-    alignment_method: "nearest_raman_acquisition_midpoint_on_shared_elapsed_time",
+    raman: [],
     view_selection: {
       selected_elapsed_s: selectedTimeS,
       echem_sequence: selectedSample?.sequence ?? null,
       echem_elapsed_s: selectedSample?.elapsed_s ?? null,
-      raman_frame_id: selectedFrame?.frame_id ?? null,
-      raman_midpoint_elapsed_s: selectedFrame?.acquisition_midpoint_elapsed_s ?? null,
-      delta_t_s: selectedFrame ? selectedFrame.acquisition_midpoint_elapsed_s - selectedTimeS : null,
     },
-    frame_alignments: buildFrameAlignments(),
   };
 }
 
@@ -392,7 +302,6 @@ function exportSession() {
 function sessionDuration(session) {
   const times = [
     ...session.electrochemistry.map((record) => record.elapsed_s),
-    ...session.raman.map((frame) => frame.acquisition_midpoint_elapsed_s),
     ...session.events.map((event) => event.elapsed_s),
   ].filter(Number.isFinite);
   return Math.max(0, ...times);
@@ -405,7 +314,7 @@ function renderSessionMeta() {
   const protocolName = currentSession.protocol_plan?.protocol_name || "Static preview";
   title.textContent = protocolName;
   const warningCount = currentSession.simulator?.warnings?.length || 0;
-  status.textContent = `${echem.length} EChem points · ${currentRaman.length} Raman frame${currentRaman.length === 1 ? "" : "s"} · 0 hardware calls${warningCount ? ` · ${warningCount} simulator warning${warningCount === 1 ? "" : "s"}` : ""}`;
+  status.textContent = `${echem.length} EChem points · 0 hardware calls${warningCount ? ` · ${warningCount} simulator warning${warningCount === 1 ? "" : "s"}` : ""}`;
   state.textContent = currentSession.terminal_state === "simulated_complete" ? "Complete" : "Failure visible";
   state.classList.toggle("failed", currentSession.terminal_state !== "simulated_complete");
   state.classList.remove("stale");
@@ -414,7 +323,7 @@ function renderSessionMeta() {
 
 function loadSimulationSession(session, options = {}) {
   if (!session || session.hardware_connected !== false || session.hardware_calls !== 0) throw new Error("Only connection-free sessions can be loaded");
-  if (!Array.isArray(session.electrochemistry) || !session.electrochemistry.length || !Array.isArray(session.raman) || !Array.isArray(session.events)) {
+  if (!Array.isArray(session.electrochemistry) || !session.electrochemistry.length || !Array.isArray(session.events)) {
     throw new Error("Simulation session is incomplete");
   }
   session.electrochemistry.slice(1).forEach((record, index) => {
@@ -423,8 +332,6 @@ function loadSimulationSession(session, options = {}) {
   setPlaying(false);
   currentSession = session;
   echem = session.electrochemistry;
-  currentRaman = session.raman;
-  currentEvents = session.events;
   durationS = sessionDuration(session);
   const slider = document.querySelector("#time-slider");
   slider.max = durationS;

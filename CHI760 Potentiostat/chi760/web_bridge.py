@@ -13,16 +13,20 @@ been verified.
 from __future__ import annotations
 
 import argparse
+import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hmac
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
 import json
+import math
 import mimetypes
 import os
 from pathlib import Path
+import re
 import secrets
 import threading
 from typing import Any, Callable, Mapping, Protocol
@@ -41,6 +45,7 @@ from .desktop_macro import (
     DesktopMacroError,
     default_chi760d_executable,
 )
+from .data_store import RunDataStore, safe_task_folder_name
 from .live_backend import CHI760ELiveBackend, LiveConnectionState
 from .worker_transport import (
     CHI760ECommissioningError,
@@ -53,11 +58,12 @@ from .worker_transport import (
 )
 
 
-BRIDGE_VERSION = "0.4.0"
+BRIDGE_VERSION = "0.5.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 MAX_REQUEST_BYTES = 64 * 1024
+MAX_SIMULATION_SAVE_BYTES = 64 * 1024 * 1024
 DEFAULT_ALLOWED_ORIGINS = frozenset(
     {"https://spectraloop.org", "https://www.spectraloop.org"}
 )
@@ -473,6 +479,234 @@ class BridgeState:
         }
 
 
+def _finite_number(
+    value: Any, field_name: str, *, nullable: bool = False
+) -> float | None:
+    if value is None and nullable:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise BridgeRequestError(
+            "invalid_simulation", f"{field_name} must be a finite number."
+        )
+    converted = float(value)
+    if not math.isfinite(converted):
+        raise BridgeRequestError(
+            "invalid_simulation", f"{field_name} must be finite."
+        )
+    return converted
+
+
+def _save_simulation_session(storage_root: Path, session: Any) -> dict[str, Any]:
+    """Validate and persist one browser-only EChem simulation."""
+
+    if not isinstance(session, Mapping):
+        raise BridgeRequestError(
+            "invalid_simulation", "A simulation session object is required."
+        )
+    if session.get("execution_mode") != "connection_free_simulation":
+        raise BridgeRequestError(
+            "invalid_simulation", "Only connection-free simulations can be saved."
+        )
+    if (
+        session.get("hardware_connected") is not False
+        or session.get("hardware_calls") != 0
+    ):
+        raise BridgeRequestError(
+            "invalid_simulation", "Simulation data must report zero hardware I/O."
+        )
+    if session.get("terminal_state") not in {"simulated_complete", "simulated_failed"}:
+        raise BridgeRequestError(
+            "invalid_simulation", "Simulation terminal state is invalid."
+        )
+
+    protocol = session.get("protocol_plan")
+    if not isinstance(protocol, Mapping):
+        raise BridgeRequestError(
+            "invalid_simulation", "The simulation protocol is missing."
+        )
+    task_name = protocol.get("protocol_name")
+    if not isinstance(task_name, str) or not task_name.strip():
+        raise BridgeRequestError(
+            "invalid_simulation", "The simulation protocol needs a task name."
+        )
+    try:
+        safe_task_folder_name(task_name)
+    except ValueError as error:
+        raise BridgeRequestError("invalid_simulation", str(error)) from error
+    records = session.get("electrochemistry")
+    events = session.get("events")
+    if not isinstance(records, list) or not 1 <= len(records) <= 50_000:
+        raise BridgeRequestError(
+            "invalid_simulation",
+            "Simulation must contain 1 to 50,000 EChem records.",
+        )
+    if not isinstance(events, list) or len(events) > 10_000:
+        raise BridgeRequestError(
+            "invalid_simulation", "Simulation events are missing or too numerous."
+        )
+    raman = session.get("raman", [])
+    if not isinstance(raman, list) or raman:
+        raise BridgeRequestError(
+            "invalid_simulation",
+            "The current simulator stores EChem only; Raman frames are not accepted.",
+        )
+
+    rows: list[list[Any]] = []
+    previous_elapsed = -math.inf
+    for index, record in enumerate(records):
+        if not isinstance(record, Mapping):
+            raise BridgeRequestError(
+                "invalid_simulation", f"EChem record {index} is invalid."
+            )
+        elapsed = _finite_number(record.get("elapsed_s"), f"record {index} elapsed_s")
+        assert elapsed is not None
+        if elapsed <= previous_elapsed:
+            raise BridgeRequestError(
+                "invalid_simulation",
+                "EChem timestamps must be strictly increasing.",
+            )
+        previous_elapsed = elapsed
+        source = record.get("source_technique")
+        if not isinstance(source, str) or not re.fullmatch(r"[a-z0-9_-]{1,64}", source):
+            raise BridgeRequestError(
+                "invalid_simulation",
+                f"EChem record {index} has an invalid technique.",
+            )
+        step_index = _finite_number(
+            record.get("step_index"), f"record {index} step_index", nullable=True
+        )
+        if step_index is not None and not step_index.is_integer():
+            raise BridgeRequestError(
+                "invalid_simulation",
+                f"EChem record {index} step_index must be an integer.",
+            )
+        rows.append(
+            [
+                index,
+                elapsed,
+                int(step_index) if step_index is not None else None,
+                source,
+                _finite_number(
+                    record.get("potential_v"),
+                    f"record {index} potential_v",
+                    nullable=True,
+                ),
+                _finite_number(
+                    record.get("current_a"),
+                    f"record {index} current_a",
+                    nullable=True,
+                ),
+                _finite_number(
+                    record.get("chronocoulometry_c"),
+                    f"record {index} chronocoulometry_c",
+                    nullable=True,
+                ),
+            ]
+        )
+    for index, event in enumerate(events):
+        if not isinstance(event, Mapping):
+            raise BridgeRequestError(
+                "invalid_simulation", f"Simulation event {index} is invalid."
+            )
+        _finite_number(event.get("elapsed_s"), f"event {index} elapsed_s")
+
+    instruments = session.get("instruments")
+    electrochemistry_instrument = (
+        instruments.get("electrochemistry")
+        if isinstance(instruments, Mapping)
+        else None
+    )
+    instrument_model = (
+        electrochemistry_instrument.get("model", "CHI 760")
+        if isinstance(electrochemistry_instrument, Mapping)
+        else "CHI 760"
+    )
+
+    try:
+        json.dumps(session, allow_nan=False)
+        store = RunDataStore(storage_root)
+        writer = store.create_simulation_trial(task_name.strip())
+        writer.write_protocol_once(protocol)
+        writer.write_simulation_session_once(session)
+        output = io.StringIO(newline="")
+        csv_writer = csv.writer(output, lineterminator="\n")
+        csv_writer.writerow(
+            [
+                "sequence",
+                "elapsed_s",
+                "step_index",
+                "source_technique",
+                "potential_v",
+                "current_a",
+                "chronocoulometry_c",
+            ]
+        )
+        csv_writer.writerows(rows)
+        writer.append_raw_output(output.getvalue().encode("utf-8"))
+        for event in events:
+            writer.append_event(event)
+        saved_at = datetime.now(timezone.utc).isoformat()
+        failed = session["terminal_state"] == "simulated_failed"
+        simulator = session.get("simulator")
+        scenario = simulator.get("scenario") if isinstance(simulator, Mapping) else None
+        simulator_version = (
+            simulator.get("version", "unknown")
+            if isinstance(simulator, Mapping)
+            else "unknown"
+        )
+        writer.write_metadata(
+            {
+                "started_at": session.get("generated_at") or saved_at,
+                "completed_at": saved_at,
+                "units": {
+                    "potential": "V",
+                    "current": "A",
+                    "time": "s",
+                    "charge": "C",
+                },
+                "technique": "ECHEM_SIMULATION",
+                "parameters": {"scenario": scenario},
+                "software_version": (
+                    f"SpectraLoop browser simulator {simulator_version}"
+                ),
+                "chi_identity": {"model": instrument_model, "simulated": True},
+                "state": "error" if failed else "completed",
+                **(
+                    {
+                        "error": session.get("run_error")
+                        or session.get("cleanup_error")
+                        or "Simulated failure"
+                    }
+                    if failed
+                    else {}
+                ),
+            }
+        )
+    except BridgeRequestError:
+        raise
+    except (OSError, TypeError, ValueError) as error:
+        raise BridgeRequestError(
+            "simulation_save_failed",
+            f"The simulation could not be saved: {error}",
+            500,
+        ) from error
+
+    relative_folder = writer.paths.directory.relative_to(storage_root.resolve()).as_posix()
+    return {
+        "saved": True,
+        "folder": relative_folder,
+        "task_name": task_name.strip(),
+        "trial": writer.paths.directory.name,
+        "files": [
+            "metadata.json",
+            "protocol.json",
+            "simulation_session.json",
+            "echem_raw.csv",
+            "events.jsonl",
+        ],
+    }
+
+
 class SpectraLoopHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     # On Windows, HTTPServer's SO_REUSEADDR default can allow two independent
@@ -537,8 +771,14 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
         if not self._authorize_api():
             return
         try:
-            payload = self._read_json()
             route = urlsplit(self.path).path
+            payload = self._read_json(
+                max_bytes=(
+                    MAX_SIMULATION_SAVE_BYTES
+                    if route == "/v1/simulations/save"
+                    else MAX_REQUEST_BYTES
+                )
+            )
             if route == "/v1/storage/select":
                 if payload:
                     raise BridgeRequestError(
@@ -548,6 +788,15 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                     self.server.bridge_state.directory_picker
                 )
                 self._json_response(HTTPStatus.OK, {"storage": result})
+                return
+            if route == "/v1/simulations/save":
+                storage_root = self.server.bridge_state.storage.root
+                if storage_root is None or not storage_root.is_dir():
+                    raise BridgeRequestError(
+                        "storage_required", "Choose an available storage folder first."
+                    )
+                saved = _save_simulation_session(storage_root, payload.get("session"))
+                self._json_response(HTTPStatus.OK, {"simulation": saved})
                 return
             if route == "/v1/instrument/760e/prepare":
                 controller_760e = self.server.bridge_state.commissioning_760e
@@ -874,7 +1123,7 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
     def _origin_allowed(self, origin: str | None) -> bool:
         return origin is not None and origin in self.server.allowed_origins
 
-    def _read_json(self) -> dict[str, Any]:
+    def _read_json(self, *, max_bytes: int = MAX_REQUEST_BYTES) -> dict[str, Any]:
         content_type = self.headers.get("Content-Type", "")
         if content_type.split(";", 1)[0].strip().lower() != "application/json":
             raise BridgeRequestError(
@@ -884,7 +1133,7 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError as error:
             raise BridgeRequestError("invalid_request", "Invalid Content-Length.") from error
-        if length < 0 or length > MAX_REQUEST_BYTES:
+        if length < 0 or length > max_bytes:
             raise BridgeRequestError("request_too_large", "Request body is too large.", 413)
         raw = self.rfile.read(length)
         try:

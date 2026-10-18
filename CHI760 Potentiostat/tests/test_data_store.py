@@ -67,6 +67,22 @@ class RunDataStoreTests(unittest.TestCase):
             self.assertEqual(task_directory / "trial-002", second.paths.directory)
             self.assertEqual("preserve", marker.read_text(encoding="utf-8"))
 
+    def test_simulation_trials_are_separate_from_real_runs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "data"
+            store = RunDataStore(root)
+            timestamp = datetime(2026, 10, 18, 15, 30, tzinfo=timezone.utc)
+
+            first = store.create_simulation_trial("EChem screening", timestamp=timestamp)
+            second = store.create_simulation_trial("EChem screening", timestamp=timestamp)
+            first.write_simulation_session_once({"execution_mode": "connection_free_simulation"})
+
+            task_directory = root / "simulations" / "2026-10-18" / "EChem screening"
+            self.assertEqual(task_directory / "trial-001", first.paths.directory)
+            self.assertEqual(task_directory / "trial-002", second.paths.directory)
+            self.assertTrue(first.paths.simulation_session.is_file())
+            self.assertFalse(store.runs_root.exists())
+
     def test_task_trial_rejects_blank_reserved_and_excessive_names(self):
         with tempfile.TemporaryDirectory() as directory:
             store = RunDataStore(Path(directory) / "data")

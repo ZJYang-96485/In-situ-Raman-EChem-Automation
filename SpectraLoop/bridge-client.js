@@ -115,6 +115,13 @@
       return this.request("/v1/storage/select", { method: "POST", body: {} });
     }
 
+    saveSimulation(session) {
+      return this.request("/v1/simulations/save", {
+        method: "POST",
+        body: { session },
+      });
+    }
+
     discoverInstrument(confirmations) {
       return this.request("/v1/instrument/discover", {
         method: "POST",

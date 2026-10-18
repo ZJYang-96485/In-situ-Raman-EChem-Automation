@@ -5,16 +5,18 @@ const path = require("node:path");
 
 const { buildEchemSeries, buildSessionPayload, raman } = require("./monitor.js");
 
-test("synchronized view is exactly two parallel plots without RDE presentation", () => {
+test("current data view presents EChem only", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
   const styles = fs.readFileSync(path.join(__dirname, "styles.css"), "utf8");
   const dataView = html.match(/<section id="data-view"[\s\S]*?<\/section>\s*<footer/)[0];
   assert.match(dataView, /class="synchronized-plots"/);
-  assert.equal((dataView.match(/<canvas /g) || []).length, 2);
   assert.match(dataView, /id="timeline-canvas"/);
-  assert.match(dataView, /id="spectrum-canvas"/);
+  assert.equal((dataView.match(/<canvas /g) || []).length, 1);
+  assert.doesNotMatch(dataView, /spectrum|RAMAN|Raman/);
+  assert.match(html, />EChem Data</);
+  assert.doesNotMatch(dataView, /aria-label="Synchronized electrochemistry and Raman plots"/);
   assert.doesNotMatch(dataView, /RDE|RPM|Disk|metric-grid|event-list/);
-  assert.match(styles, /\.synchronized-plots\s*\{[^}]*grid-template-columns:\s*repeat\(2,/);
+  assert.match(styles, /\.synchronized-plots\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
 });
 
 test("electrochemistry preview has monotonic time and verified trapezoidal charge", () => {
@@ -39,14 +41,15 @@ test("RDE preview changes commanded RPM without inventing measured RPM", () => {
   assert.ok(records.every((record) => record.rde_measured_rpm === null));
 });
 
-test("synchronized export preserves source timing and explicit signed alignments", () => {
+test("EChem export preserves source timing without Raman alignment fields", () => {
   const payload = buildSessionPayload();
   assert.equal(payload.hardware_connected, false);
   assert.equal(payload.timing_quality, "simulated_unverified");
-  assert.equal(payload.frame_alignments.length, raman.length);
+  assert.equal(raman.length, 0);
+  assert.equal(payload.raman.length, 0);
+  assert.equal("frame_alignments" in payload, false);
+  assert.equal("alignment_method" in payload, false);
   assert.ok(payload.electrochemistry.every((record) => Number.isFinite(record.source_timestamp_s)));
-  assert.ok(payload.raman.every((frame) => Number.isInteger(frame.sequence)));
-  assert.ok(payload.frame_alignments.every((link) => Number.isFinite(link.delta_t_s)));
   assert.equal(payload.ir_compensation.applied, false);
   assert.equal(payload.protocol_plan.hash, null);
 });

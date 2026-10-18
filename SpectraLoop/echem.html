@@ -3,11 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Build CHI 760E protocols and inspect synchronized electrochemistry–Raman data in one interface." />
+    <meta name="description" content="Build CHI 760B, 760D, and 760E protocols and inspect electrochemistry simulation data." />
     <title>SpectraLoop — Electrochemistry</title>
     <meta name="theme-color" content="#061b3b" />
     <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
-    <link rel="stylesheet" href="styles.css?v=echem-bridge-3" />
+    <link rel="stylesheet" href="styles.css?v=echem-ec-only-1" />
   </head>
   <body>
     <main class="shell wide-shell">
@@ -15,7 +15,7 @@
         <div class="title-block">
           <p class="eyebrow">CHI 760E · ELECTROCHEMISTRY</p>
           <h1>Plan and inspect</h1>
-          <p class="subtitle">One workspace for the protocol and synchronized data.</p>
+          <p class="subtitle">One workspace for electrochemistry protocols and data.</p>
         </div>
         <div class="header-actions">
           <a class="site-link" href="setup.html">Setup</a>
@@ -84,7 +84,7 @@
         <p id="chi760d-runner-detail" class="bridge-check-status" role="status" aria-live="polite">Start the dedicated 760D bridge to inspect readiness.</p>
         <details class="bridge-discovery-details" id="chi760d-runner-details">
           <summary>Review and authorize the internal-dummy series</summary>
-          <p class="card-note">Build a series using only bounded CV and wait steps, disable iR compensation, and set Raman timing to None. Preparing writes a unique macro and data folder but does not start CHI.</p>
+          <p class="card-note">Build an EChem-only series using bounded CV and wait steps, and disable iR compensation. Preparing writes a unique macro and data folder but does not start CHI.</p>
           <fieldset class="identity-confirmations" id="chi760d-run-confirmations" disabled>
             <legend>Confirm immediately before starting</legend>
             <label><input type="checkbox" data-chi760d-confirmation="internal_dummy_only" /> Use the CHI internal dummy cell only; no external sample.</label>
@@ -109,7 +109,7 @@
 
       <nav class="echem-switch" role="tablist" aria-label="Electrochemistry workspace">
         <button class="active" type="button" role="tab" aria-selected="true" aria-controls="protocol-view" data-view-target="protocol">Protocol Builder</button>
-        <button type="button" role="tab" aria-selected="false" aria-controls="data-view" data-view-target="data" tabindex="-1">Synchronized Data</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="data-view" data-view-target="data" tabindex="-1">EChem Data</button>
       </nav>
 
       <section id="protocol-view" role="tabpanel" data-echem-view="protocol">
@@ -164,14 +164,7 @@
                 </select>
               </label>
               <label class="field"><span>Name</span><input id="protocol-name" type="text" value="OCP-EIS-CV" /></label>
-              <label class="field">
-                <span>Raman timing</span>
-                <select id="raman-sync">
-                  <option value="after_equilibration">After equilibration</option>
-                  <option value="before_and_after_experiment">Before and after experiment</option>
-                  <option value="none">None</option>
-                </select>
-              </label>
+              <input id="raman-sync" type="hidden" value="none" />
             </section>
 
             <section class="builder-panel ir-panel compact-ir-panel">
@@ -247,7 +240,7 @@
           <div>
             <p class="eyebrow">CONNECTION-FREE EXECUTION</p>
             <h2 id="simulation-runner-title">Run the current protocol</h2>
-            <p id="simulation-builder-status" role="status" aria-live="polite">Deterministic CHI, Raman, iR, and optional RDE signals · 0 hardware calls.</p>
+            <p id="simulation-builder-status" role="status" aria-live="polite">Deterministic EChem, iR, and optional RDE signals · 0 hardware calls. Successful runs are saved through the local bridge.</p>
           </div>
           <div class="simulation-controls">
             <label class="field compact-control">
@@ -292,7 +285,7 @@
 
       <section id="data-view" role="tabpanel" data-echem-view="data" hidden>
         <div class="data-toolbar">
-          <div><strong id="simulation-session-title">Static preview</strong><span id="simulation-session-status">Software-aligned · timing unverified</span></div>
+          <div><strong id="simulation-session-title">Static preview</strong><span id="simulation-session-status">EChem simulation · timing unverified</span></div>
           <div class="simulation-data-controls">
             <span id="simulation-session-state" class="count-chip">Complete</span>
             <label class="field inline-field"><span>Replay speed</span><select id="playback-speed"><option value="1">1×</option><option value="10" selected>10×</option><option value="50">50×</option><option value="200">200×</option></select></label>
@@ -301,7 +294,7 @@
           </div>
         </div>
 
-        <div class="synchronized-plots" aria-label="Synchronized electrochemistry and Raman plots">
+        <div class="synchronized-plots" aria-label="Electrochemistry plot">
           <section class="timeline-panel" aria-labelledby="timeline-title">
             <div class="workspace-heading"><div><p class="eyebrow">ELECTROCHEMISTRY</p><h2 id="timeline-title">Potential and current</h2></div><span class="count-chip">Shared time</span></div>
             <canvas id="timeline-canvas" class="data-canvas" width="680" height="350" aria-label="Simulated electrochemistry potential and current versus time"></canvas>
@@ -311,11 +304,6 @@
               <output id="time-output" for="time-slider">0.0 / 120.0 s</output>
             </div>
           </section>
-
-          <section class="spectrum-panel" aria-labelledby="spectrum-title">
-            <div class="workspace-heading"><div><p class="eyebrow">RAMAN</p><h2 id="spectrum-title">Spectrum at <span id="spectrum-time">—</span></h2></div><span id="spectrum-offset" class="count-chip">Δt —</span></div>
-            <canvas id="spectrum-canvas" class="data-canvas spectrum-canvas" width="680" height="350" aria-label="Nearest simulated Raman spectrum"></canvas>
-          </section>
         </div>
       </section>
 
@@ -324,12 +312,12 @@
         <a href="setup.html">Experiment setup →</a>
       </footer>
     </main>
-    <script src="bridge-client.js?v=echem-bridge-5"></script>
-    <script src="echem-bridge.js?v=echem-bridge-8"></script>
-    <script src="protocols.js?v=echem-models-3"></script>
-    <script src="smoke-test.js?v=echem-simulator-1"></script>
-    <script src="simulator.js?v=echem-simulator-3"></script>
-    <script src="monitor.js?v=echem-sync-2"></script>
-    <script src="echem.js?v=echem-simulator-3"></script>
+    <script src="bridge-client.js?v=echem-bridge-6"></script>
+    <script src="echem-bridge.js?v=echem-bridge-9"></script>
+    <script src="protocols.js?v=echem-models-4"></script>
+    <script src="smoke-test.js?v=echem-simulator-2"></script>
+    <script src="simulator.js?v=echem-simulator-4"></script>
+    <script src="monitor.js?v=echem-ec-only-1"></script>
+    <script src="echem.js?v=echem-simulator-4"></script>
   </body>
 </html>
