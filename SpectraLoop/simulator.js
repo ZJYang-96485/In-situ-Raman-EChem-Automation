@@ -1,3 +1,6 @@
+(function initializeSpectraLoopSimulator(root) {
+"use strict";
+
 const SIMULATOR_VERSION = "0.1";
 const MAX_SIMULATION_POINTS = 50000;
 const IR_TARGET_FRACTION = 0.95;
@@ -569,5 +572,6 @@ function buildSimulationSession(plan, options = {}) {
 }
 
 const simulatorCore = { buildSimulationSession, evaluateIRFractions, scenarioDefinitions, simulateStepSamples };
-if (typeof globalThis !== "undefined") globalThis.SpectraLoopSimulatorCore = simulatorCore;
+if (root) root.SpectraLoopSimulatorCore = simulatorCore;
 if (typeof module !== "undefined" && module.exports) module.exports = simulatorCore;
+})(typeof globalThis !== "undefined" ? globalThis : this);

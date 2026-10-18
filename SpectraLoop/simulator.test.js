@@ -216,3 +216,23 @@ test("runner reloads the simulator with a unique URL when its global is missing"
   assert.equal(typeof recovered.buildSimulationSession, "function");
   assert.match(appendedSource, /simulator\.js\?v=echem-simulator-3&recovery=\d+/);
 });
+
+test("classic simulator script can execute again after its global is removed", () => {
+  const source = fs.readFileSync(path.join(__dirname, "simulator.js"), "utf8");
+  const context = {};
+  vm.createContext(context);
+
+  vm.runInContext(source, context);
+  assert.equal(
+    typeof context.SpectraLoopSimulatorCore.buildSimulationSession,
+    "function",
+  );
+
+  delete context.SpectraLoopSimulatorCore;
+  vm.runInContext(source, context);
+
+  assert.equal(
+    typeof context.SpectraLoopSimulatorCore.buildSimulationSession,
+    "function",
+  );
+});
