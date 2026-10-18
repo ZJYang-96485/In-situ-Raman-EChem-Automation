@@ -58,6 +58,10 @@
       dummyDetail: desktop760d.blocker
         || (desktop760d.active?.running
           ? `Run ${desktop760d.active.run_label} is active in the CHI desktop.`
+          : desktop760d.active?.state === "completed"
+            ? `Run ${desktop760d.active.run_label} completed with ${desktop760d.active.text_outputs_detected}/${desktop760d.active.expected_output_count} text outputs.`
+            : desktop760d.active?.state === "error"
+              ? `Run ${desktop760d.active.run_label} ended without every expected output; review the local run folder and CHI window.`
           : "The audited CHI 760D executable is ready for an internal-dummy CV/wait series."),
     };
   }
@@ -94,6 +98,7 @@
     let client = null;
     let snapshot = null;
     let preparationToken = null;
+    let runnerPoll = null;
     let selectedModel = ["760B", "760D", "760E"].includes(elements.modelSelect?.value)
       ? elements.modelSelect.value
       : "760E";
@@ -145,6 +150,35 @@
         || !elements.runnerInputs.every((input) => input.checked);
     }
 
+    function stopRunnerPolling() {
+      if (runnerPoll !== null) {
+        browserWindow.clearInterval(runnerPoll);
+        runnerPoll = null;
+      }
+    }
+
+    function syncRunnerPolling() {
+      const running = selectedModel === "760D"
+        && snapshot?.desktop_760d?.active?.running === true;
+      if (!running) {
+        stopRunnerPolling();
+        return;
+      }
+      if (runnerPoll !== null) return;
+      runnerPoll = browserWindow.setInterval(async () => {
+        if (!client) {
+          stopRunnerPolling();
+          return;
+        }
+        try {
+          renderStatus(await client.status());
+        } catch (error) {
+          stopRunnerPolling();
+          checkMessage(`Run status check failed: ${error.message}`, "failed");
+        }
+      }, 2500);
+    }
+
     function showUnavailable(message) {
       snapshot = null;
       labeledStatus(elements.summary, "Local bridge not connected · no hardware I/O", "amber");
@@ -164,6 +198,7 @@
       elements.runnerDetail.textContent = "Start SpectraLoop 760D.cmd on the instrument computer.";
       elements.runnerFieldset.disabled = true;
       preparationToken = null;
+      stopRunnerPolling();
       updateDiscoveryButton();
       updateRunnerButtons();
     }
@@ -182,11 +217,17 @@
       elements.instrumentDetail.textContent = view.instrumentDetail;
       elements.storageButton.disabled = false;
       elements.confirmationFieldset.disabled = !view.discoveryEnabled;
-      labeledStatus(
-        elements.runnerState,
-        view.dummyReady && benchAvailable ? "Internal-dummy series ready" : "760D execution locked",
-        view.dummyReady && benchAvailable ? "safe" : "amber",
-      );
+      const active = snapshot.desktop_760d?.active;
+      const runnerLabel = active?.running
+        ? "Series running"
+        : active?.state === "completed"
+          ? "Last series completed"
+          : active?.state === "error"
+            ? "Last series needs review"
+            : view.dummyReady && benchAvailable
+              ? "Internal-dummy series ready"
+              : "760D execution locked";
+      labeledStatus(elements.runnerState, runnerLabel, active?.state === "error" ? "amber" : view.dummyReady && benchAvailable ? "safe" : "amber");
       elements.runnerDetail.textContent = benchAvailable
         ? view.dummyDetail
         : "Bench is marked measurement in progress. Hardware preparation and execution are disabled.";
@@ -194,6 +235,7 @@
       elements.runnerFieldset.disabled = !view.dummyReady || !benchAvailable;
       updateDiscoveryButton();
       updateRunnerButtons();
+      syncRunnerPolling();
     }
 
     function applyModelScope(nextModel) {
@@ -201,6 +243,7 @@
       elements.instrumentLabel.textContent = `CHI ${selectedModel} adapter`;
       elements.sdkDetails.hidden = selectedModel !== "760E";
       elements.runnerPanel.hidden = selectedModel !== "760D";
+      if (selectedModel !== "760D") stopRunnerPolling();
       if (selectedModel !== "760E") {
         elements.confirmationInputs.forEach((input) => { input.checked = false; });
       }

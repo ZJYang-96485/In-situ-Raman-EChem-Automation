@@ -272,6 +272,8 @@ class PreparedDummyRun:
     text_outputs: tuple[Path, ...]
     binary_outputs: tuple[Path, ...]
     prepared_at: datetime
+    started_at: str | None = None
+    finalized: bool = False
 
 
 class CHI760DDesktopController:
@@ -400,6 +402,7 @@ class CHI760DDesktopController:
             self.hardware_calls += 1
             self._active = (prepared, process)
         started_at = datetime.now(timezone.utc).isoformat()
+        prepared.started_at = started_at
         prepared.writer.write_metadata(
             {
                 "started_at": started_at,
@@ -445,12 +448,50 @@ class CHI760DDesktopController:
                 return None
             prepared, process = self._active
             return_code = process.poll()
+            text_outputs_detected = sum(path.is_file() for path in prepared.text_outputs)
+            binary_outputs_detected = sum(path.is_file() for path in prepared.binary_outputs)
+            if return_code is not None and not prepared.finalized:
+                completed_at = datetime.now(timezone.utc).isoformat()
+                output_complete = text_outputs_detected == len(prepared.text_outputs)
+                state = "completed" if return_code == 0 and output_complete else "error"
+                metadata: dict[str, Any] = {
+                    "started_at": prepared.started_at or prepared.prepared_at.isoformat(),
+                    "completed_at": completed_at,
+                    "units": {"potential": "V", "scan_rate": "V/s", "time": "s"},
+                    "technique": "SERIES",
+                    "parameters": prepared.plan.public_summary(),
+                    "software_version": "SpectraLoop-CHI760D-macro-0.2",
+                    "chi_identity": {
+                        "model": "CHI 760D",
+                        "verification": "approved_desktop_executable",
+                    },
+                    "state": state,
+                }
+                if state == "error":
+                    metadata["error"] = (
+                        f"CHI desktop exited with code {return_code}."
+                        if return_code != 0
+                        else "CHI desktop exited without every expected text output."
+                    )
+                prepared.writer.write_metadata(metadata)
+                prepared.writer.append_instrument_trace(
+                    {
+                        "operation": "chi760d_macro_completed",
+                        "completed_at": completed_at,
+                        "state": state,
+                        "process_return_code": return_code,
+                        "text_outputs_detected": text_outputs_detected,
+                        "expected_output_count": len(prepared.text_outputs),
+                    }
+                )
+                prepared.finalized = True
             return {
                 "run_label": prepared.writer.paths.directory.name,
                 "running": return_code is None,
+                "state": "running" if return_code is None else "completed" if return_code == 0 and text_outputs_detected == len(prepared.text_outputs) else "error",
                 "process_return_code": return_code,
-                "text_outputs_detected": sum(path.is_file() for path in prepared.text_outputs),
-                "binary_outputs_detected": sum(path.is_file() for path in prepared.binary_outputs),
+                "text_outputs_detected": text_outputs_detected,
+                "binary_outputs_detected": binary_outputs_detected,
                 "expected_output_count": len(prepared.text_outputs),
             }
 

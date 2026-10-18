@@ -8,7 +8,7 @@ const { describeSnapshot } = require("./echem-bridge.js");
 test("electrochemistry page exposes bridge, storage, and identity controls", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
   const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-5");
-  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-7");
+  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-8");
 
   assert.match(html, /id="echem-bridge-summary"/);
   assert.match(html, /id="echem-bridge-check-status"/);
@@ -39,6 +39,24 @@ test("760D desktop status enables only the explicit internal-dummy workflow", ()
   assert.equal(view.header, "Local bridge connected - 760D dummy test ready");
   assert.equal(view.dummyReady, true);
   assert.match(view.dummyDetail, /internal-dummy CV/);
+});
+
+test("760D completed series reports saved output progress", () => {
+  const view = describeSnapshot({
+    storage: { configured: true, available: true, folder_name: "data" },
+    desktop_760d: {
+      experiment_control_enabled: true,
+      active: {
+        run_label: "run-123",
+        running: false,
+        state: "completed",
+        text_outputs_detected: 2,
+        expected_output_count: 2,
+      },
+    },
+  }, "760D");
+
+  assert.match(view.dummyDetail, /completed with 2\/2 text outputs/);
 });
 
 test("unavailable adapter is visibly different from a disconnected bridge", () => {

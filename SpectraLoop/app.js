@@ -157,13 +157,16 @@ function refreshCapabilities() {
   }[status]);
   const available = Object.entries(profile)
     .flatMap(([status, techniques]) => techniques.map((technique) => ({ status, technique })));
+  const commissioning = model === "760D" ? new Set(["CV"]) : new Set();
   document.querySelector("#profile-title").textContent = `CHI ${model} automation functions`;
-  document.querySelector("#profile-summary").textContent = `${available.length} functions in the selected model profile`;
+  document.querySelector("#profile-summary").textContent = commissioning.size
+    ? `${available.length} planning functions · ${commissioning.size} bounded commissioning function`
+    : `${available.length} planning functions · live execution not configured`;
   document.querySelector("#chi-capabilities").innerHTML = available
     .map(({ status, technique }) => `
-      <li class="${status}">
+      <li class="${status}${commissioning.has(technique) ? " commissioning" : ""}">
         <strong>${technique}</strong>
-        <small>${labelFor(status)}</small>
+        <small>${commissioning.has(technique) ? "Bounded commissioning run" : `${labelFor(status)} planning`}</small>
       </li>
     `)
     .join("");

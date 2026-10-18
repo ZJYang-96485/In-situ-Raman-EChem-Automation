@@ -165,6 +165,34 @@ class DesktopMacroTests(unittest.TestCase):
         metadata = next((self.data_root / "runs").rglob("metadata.json"))
         self.assertIn('"state": "running"', metadata.read_text(encoding="utf-8"))
 
+    def test_status_finalizes_success_only_after_expected_output_exists(self) -> None:
+        controller = self.controller(enabled=True)
+        prepared = controller.prepare(valid_protocol(), self.data_root)
+        controller.execute(str(prepared["preparation_token"]))
+        run_directory = next((self.data_root / "runs").glob("*/*"))
+        (run_directory / "step_01_cv.txt").write_text("test output\n", encoding="ascii")
+        self.process.return_code = 0
+
+        active = controller.public_status()["active"]
+
+        self.assertEqual("completed", active["state"])
+        metadata = (run_directory / "metadata.json").read_text(encoding="utf-8")
+        self.assertIn('"state": "completed"', metadata)
+        self.assertIn('"completed_at"', metadata)
+
+    def test_status_records_error_when_desktop_exits_without_output(self) -> None:
+        controller = self.controller(enabled=True)
+        prepared = controller.prepare(valid_protocol(), self.data_root)
+        controller.execute(str(prepared["preparation_token"]))
+        self.process.return_code = 0
+
+        active = controller.public_status()["active"]
+
+        self.assertEqual("error", active["state"])
+        metadata = next((self.data_root / "runs").rglob("metadata.json")).read_text(encoding="utf-8")
+        self.assertIn('"state": "error"', metadata)
+        self.assertIn("without every expected text output", metadata)
+
     def test_unapproved_executable_hash_fails_closed(self) -> None:
         controller = CHI760DDesktopController(
             self.executable,

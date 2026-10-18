@@ -590,14 +590,19 @@ function refreshTargetModelUI() {
     : "· available for approved commissioning";
 
   const availableFunctions = MODEL_TECHNIQUE_PROFILES[targetModel]
-    .map((kind) => ({ kind, definition: stepDefinitions[kind], status: effectiveStatus(kind) }))
+    .map((kind) => ({
+      kind,
+      definition: stepDefinitions[kind],
+      status: effectiveStatus(kind),
+      commissioning: targetModel === "760D" && ["wait", "cv"].includes(kind),
+    }))
     .filter(({ definition }) => Boolean(definition));
   document.querySelector("#protocol-model-function-count").textContent = String(availableFunctions.length);
   document.querySelector("#protocol-model-functions").innerHTML = availableFunctions
-    .map(({ definition, status }) => `
-      <span class="model-function ${status}">
+    .map(({ definition, status, commissioning }) => `
+      <span class="model-function ${status}${commissioning ? " commissioning" : ""}">
         <strong>${definition.label}</strong>
-        <small>${badgeLabel(status)}</small>
+        <small>${commissioning ? "Commissioning run" : `${badgeLabel(status)} plan`}</small>
       </span>
     `)
     .join("");
