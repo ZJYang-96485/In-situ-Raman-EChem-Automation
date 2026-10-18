@@ -1,8 +1,11 @@
 # CHI 760-series Potentiostat
 
 This module provides a connection-free, model-profiled planning surface for CH
-Instruments 760-series automation. The current development target is the CHI
-760E.
+Instruments 760-series automation. The 760E SDK worker and 760D desktop-macro
+commissioning path are separate adapters. CHI 760B work is currently limited to
+offline, model-gated CV and amperometric i-t planning while the connected unit
+is occupied by a measurement. See
+[`docs/chi760b-offline-commissioning.md`](docs/chi760b-offline-commissioning.md).
 
 ## Electrochemistry-only Windows node
 

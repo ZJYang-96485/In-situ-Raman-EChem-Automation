@@ -1,3 +1,25 @@
+const TARGET_MODELS = Object.freeze(["760B", "760C", "760D", "760E"]);
+const MODEL_TECHNIQUE_PROFILES = Object.freeze({
+  "760B": Object.freeze(["wait", "cv", "it"]),
+  "760C": Object.freeze(["wait", "cv", "it", "eis"]),
+  "760D": Object.freeze(["wait", "cv", "it", "lsv", "eis", "ocp"]),
+  "760E": Object.freeze([
+    "wait", "ocp", "cv", "it", "ca", "cc_from_ca", "ca_range", "step",
+    "levich_rpm_sweep_ca", "eis", "swv", "impe", "cp", "cc_charge",
+    "cc_discharge", "lsv", "geis",
+  ]),
+});
+
+function normalizeTargetModel(value) {
+  const normalized = String(value || "").toUpperCase().replace(/^CHI\s*/, "");
+  return TARGET_MODELS.includes(normalized) ? normalized : null;
+}
+
+function techniqueAvailableForModel(kind, model) {
+  const normalized = normalizeTargetModel(model);
+  return normalized ? MODEL_TECHNIQUE_PROFILES[normalized].includes(kind) : false;
+}
+
 const stepDefinitions = {
   wait: {
     label: "Wait", status: "orchestration", chi: null, ir: false,
@@ -163,8 +185,35 @@ const stepDefinitions = {
 };
 
 const presets = {
+  "chi760b-cv": {
+    name: "760B CV plan",
+    allowedModels: ["760B"],
+    ramanSync: "none",
+    irEnabled: false,
+    steps: [{
+      kind: "cv",
+      name: "760B CV",
+      values: {
+        initial_voltage_v: 0,
+        apex1_voltage_v: 0.2,
+        apex2_voltage_v: -0.2,
+        final_voltage_v: 0,
+        scan_rate_v_s: 0.05,
+        step_size_v: 0.002,
+        cycles: 1,
+      },
+    }],
+  },
+  "chi760b-it": {
+    name: "760B amperometric i-t plan",
+    allowedModels: ["760B"],
+    ramanSync: "none",
+    irEnabled: false,
+    steps: [{ kind: "it", name: "760B amperometric i-t" }],
+  },
   "chi760d-dummy": {
     name: "760D internal dummy CV",
+    allowedModels: ["760D"],
     ramanSync: "none",
     irEnabled: false,
     steps: [{
@@ -183,10 +232,12 @@ const presets = {
   },
   levich: {
     name: "Levich CA RPM sweep",
+    allowedModels: ["760E"],
     steps: [{ kind: "levich_rpm_sweep_ca", name: "Levich CA RPM sweep" }],
   },
   "ocp-eis-cv": {
     name: "OCP-EIS-CV",
+    allowedModels: ["760D", "760E"],
     steps: [
       { kind: "ocp", name: "OCP before" },
       { kind: "eis", name: "EIS before" },
@@ -195,6 +246,7 @@ const presets = {
   },
   "ca-forward-backward": {
     name: "Bulk electrode CA steps with backward",
+    allowedModels: ["760E"],
     steps: [
       { kind: "ocp", name: "OCP before" },
       { kind: "eis", name: "EIS before" },
@@ -206,12 +258,23 @@ const presets = {
   },
   "orr-lsv": {
     name: "ORR OCP-LSV",
+    allowedModels: ["760D"],
     steps: [{ kind: "ocp", name: "OCP before" }, { kind: "lsv", name: "ORR LSV" }],
   },
-  blank: { name: "Custom CHI 760E protocol", steps: [] },
+  blank: { name: "Custom CHI 760-series protocol", allowedModels: TARGET_MODELS, steps: [] },
 };
 
 let steps = [];
+let targetModel = "760E";
+let benchState = "busy";
+
+function effectiveStatus(kind, model = targetModel) {
+  const definition = stepDefinitions[kind];
+  if (!definition) return null;
+  if (!techniqueAvailableForModel(kind, model)) return "unavailable";
+  if (["derived", "orchestration", "desktop", "verify"].includes(definition.status)) return definition.status;
+  return "libec";
+}
 
 function newStep(kind, overrides = {}) {
   const definition = stepDefinitions[kind];
@@ -233,7 +296,7 @@ function newStep(kind, overrides = {}) {
 }
 
 function badgeLabel(status) {
-  return { libec: "760E libec", derived: "Derived", desktop: "Desktop only", verify: "Verify SDK", orchestration: "Scheduler" }[status];
+  return { libec: "Documented", derived: "Derived", desktop: "Desktop only", verify: "Verify SDK", orchestration: "Scheduler" }[status];
 }
 
 function escapeHtml(value) {
@@ -246,6 +309,7 @@ function renderSteps() {
   const list = document.querySelector("#step-list");
   list.innerHTML = steps.map((step, index) => {
     const definition = stepDefinitions[step.kind];
+    const status = effectiveStatus(step.kind);
     const fields = definition.fields.map((field) => `
       <label class="field compact-field">
         <span>${field.label}</span>
@@ -261,7 +325,7 @@ function renderSteps() {
             <span class="step-mapping">${definition.label} → ${definition.chi || "local action"}</span>
           </div>
           <div class="step-actions">
-            <span class="badge ${definition.status}">${badgeLabel(definition.status)}</span>
+            <span class="badge ${status}">${status === "unavailable" ? `Not in ${targetModel} profile` : badgeLabel(status)}</span>
             ${definition.ir ? '<span class="badge ir">iR planned · verify SDK</span>' : ""}
             <button type="button" data-action="up" data-index="${index}" aria-label="Move step up">↑</button>
             <button type="button" data-action="down" data-index="${index}" aria-label="Move step down">↓</button>
@@ -300,7 +364,7 @@ function buildPlan() {
       name: step.name,
       source_technique: step.kind,
       chi_technique: definition.chi,
-      adaptation_status: definition.status,
+      adaptation_status: effectiveStatus(step.kind),
       ir_compensation_eligible: definition.ir,
       derived_outputs: definition.derivedOutputs || (["ca", "ca_range", "levich_rpm_sweep_ca"].includes(step.kind) ? ["chronocoulometry_C"] : []),
       parameters,
@@ -322,7 +386,10 @@ function buildPlan() {
     protocol_name: document.querySelector("#protocol-name").value.trim(),
     source_reference: "https://github.com/ZJYang-96485/RDE",
     source_platform: "Gamry",
-    target_platform: "CHI 760E",
+    target_model: targetModel,
+    target_platform: `CHI ${targetModel}`,
+    bench_state: benchState,
+    hardware_access_requested: false,
     execution_enabled: false,
     mapping_review_required: true,
     raman_sync: {
@@ -364,18 +431,26 @@ function buildPlan() {
 function validatePlan(plan) {
   const errors = [];
   const warnings = [];
+  const planModel = normalizeTargetModel(plan.target_model || plan.target_platform || "760E");
+  if (!planModel) errors.push("Choose a recognized CHI 760-series target model.");
   if (!plan.protocol_name) errors.push("Add a protocol name.");
   if (!plan.steps.length) errors.push("Add at least one step.");
   if (!["after_equilibration", "before_and_after_experiment", "none"].includes(plan.raman_sync?.policy)) {
     errors.push("Choose a recognized Raman synchronization policy.");
   }
-  if (plan.steps.some((step) => step.adaptation_status === "desktop")) {
+  if (plan.bench_state === "busy") {
+    warnings.push("Instrument is marked measurement in progress; this protocol is offline planning only.");
+  }
+  if (planModel === "760E" && plan.steps.some((step) => step.source_technique === "lsv")) {
     warnings.push("LSV is retained from the RDE workflow but is not listed for 760E in the public libec matrix.");
   }
   if (plan.steps.some((step) => step.adaptation_status === "verify")) {
     warnings.push("At least one step requires installed-SDK parameter verification.");
   }
   const ir = plan.ir_compensation;
+  if (ir.enabled && planModel !== "760E") {
+    errors.push(`iR compensation is not available in the documented ${planModel || "selected model"} automation profile.`);
+  }
   if (ir.target_compensation_fraction !== 0.95) errors.push("iR target compensation must remain fixed at 95%.");
   if (ir.max_compensation_trials !== 10) errors.push("The compensation trial ceiling must remain fixed at 10.");
   if (!Number.isInteger(ir.ru_retry_count) || ir.ru_retry_count < 3 || ir.ru_retry_count > 20) errors.push("Ru attempts per trial must be an integer from 3 to 20.");
@@ -393,6 +468,9 @@ function validatePlan(plan) {
     if (!definition) {
       errors.push(`Step ${index + 1}: unrecognized CHI technique.`);
       return;
+    }
+    if (planModel && !techniqueAvailableForModel(kind, planModel)) {
+      errors.push(`Step ${index + 1}: ${definition.label} is not documented for CHI ${planModel} automation.`);
     }
     if (!String(step.name ?? "").trim()) errors.push(`Step ${index + 1}: add a step name.`);
     definition.fields.forEach((field) => {
@@ -489,8 +567,70 @@ function refreshPreview() {
   issuePanel.innerHTML = `${errorMarkup}${warningMarkup}`;
 }
 
+function populateTechniqueSelect() {
+  const stepSelect = document.querySelector("#new-step-kind");
+  stepSelect.innerHTML = Object.entries(stepDefinitions)
+    .filter(([kind]) => techniqueAvailableForModel(kind, targetModel))
+    .map(([value, definition]) => {
+      const status = effectiveStatus(value);
+      return `<option value="${value}">${definition.label} · ${badgeLabel(status)}</option>`;
+    })
+    .join("");
+}
+
+function refreshTargetModelUI() {
+  const modelSelect = document.querySelector("#protocol-model");
+  const benchSelect = document.querySelector("#protocol-bench-state");
+  modelSelect.value = targetModel;
+  benchSelect.value = benchState;
+  document.querySelector("#protocol-target-label").textContent = `CHI ${targetModel} plan`;
+  document.querySelector("#protocol-libec-label").textContent = `${targetModel} documented`;
+  document.querySelector("#protocol-bench-label").textContent = benchState === "busy"
+    ? "· measurement in progress; offline only"
+    : "· available for approved commissioning";
+
+  const availableFunctions = MODEL_TECHNIQUE_PROFILES[targetModel]
+    .map((kind) => ({ kind, definition: stepDefinitions[kind], status: effectiveStatus(kind) }))
+    .filter(({ definition }) => Boolean(definition));
+  document.querySelector("#protocol-model-function-count").textContent = String(availableFunctions.length);
+  document.querySelector("#protocol-model-functions").innerHTML = availableFunctions
+    .map(({ definition, status }) => `
+      <span class="model-function ${status}">
+        <strong>${definition.label}</strong>
+        <small>${badgeLabel(status)}</small>
+      </span>
+    `)
+    .join("");
+  const functionNotes = {
+    "760B": "CV and amperometric i-t planning are available. Live control is not configured; the active measurement remains protected.",
+    "760D": "Documented planning plus a separately approved internal-dummy CV commissioning route.",
+    "760E": "The broadest planning surface. Some functions are derived, scheduled, desktop-only, or still require SDK verification.",
+  };
+  document.querySelector("#protocol-model-function-note").textContent = functionNotes[targetModel]
+    || "The selected model has no configured automation profile.";
+  document.querySelector("#chi760d-runner-panel").hidden = targetModel !== "760D";
+
+  const irToggle = document.querySelector("#ir-enabled");
+  if (targetModel !== "760E") irToggle.checked = false;
+  irToggle.disabled = targetModel !== "760E";
+
+  const presetSelect = document.querySelector("#protocol-preset");
+  Array.from(presetSelect.options).forEach((option) => {
+    const preset = presets[option.value];
+    option.disabled = Boolean(preset) && !preset.allowedModels.includes(targetModel);
+  });
+  if (presetSelect.selectedOptions[0]?.disabled) presetSelect.value = "blank";
+  populateTechniqueSelect();
+  document.dispatchEvent(new CustomEvent("spectraloop:protocol-scope-changed", {
+    detail: { targetModel, benchState },
+  }));
+}
+
 function loadPreset(key) {
   const preset = presets[key];
+  if (!preset || !preset.allowedModels.includes(targetModel)) {
+    throw new TypeError(`Preset ${key} is not available for CHI ${targetModel}`);
+  }
   steps = preset.steps.map((step) => newStep(step.kind, step));
   document.querySelector("#protocol-name").value = preset.name;
   if (preset.ramanSync) document.querySelector("#raman-sync").value = preset.ramanSync;
@@ -511,14 +651,15 @@ function exportPlan() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${plan.protocol_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "chi760e-protocol"}.json`;
+  link.download = `${plan.protocol_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "chi760-protocol"}.json`;
   link.click();
   URL.revokeObjectURL(url);
 }
 
 function loadSavedPlan() {
   const button = document.querySelector("#load-protocol");
-  const raw = localStorage.getItem("spectraloop-chi760e-protocol");
+  const raw = localStorage.getItem("spectraloop-chi760-protocol")
+    || localStorage.getItem("spectraloop-chi760e-protocol");
   if (!raw) {
     button.textContent = "No saved plan";
     setTimeout(() => { button.textContent = "Load saved"; }, 1200);
@@ -526,13 +667,18 @@ function loadSavedPlan() {
   }
   try {
     const plan = JSON.parse(raw);
+    const savedModel = normalizeTargetModel(plan.target_model || plan.target_platform || "760E");
+    if (!savedModel) throw new Error("saved target model is invalid");
+    targetModel = savedModel;
+    benchState = plan.bench_state === "available" ? "available" : "busy";
+    refreshTargetModelUI();
     const restoredSteps = restoreSavedSteps(plan);
     if (typeof plan.protocol_name !== "string") throw new Error("saved protocol name is invalid");
     const ir = plan.ir_compensation || {};
     if (ir.enabled !== undefined && typeof ir.enabled !== "boolean") throw new Error("saved iR enabled flag is invalid");
     if (ir.continue_without_ir_on_ru_failure !== undefined && typeof ir.continue_without_ir_on_ru_failure !== "boolean") throw new Error("saved iR fallback flag is invalid");
     steps = restoredSteps;
-    document.querySelector("#protocol-name").value = plan.protocol_name || "Saved CHI 760E protocol";
+    document.querySelector("#protocol-name").value = plan.protocol_name || `Saved CHI ${targetModel} protocol`;
     if (plan.raman_sync?.policy) document.querySelector("#raman-sync").value = plan.raman_sync.policy;
     document.querySelector("#ir-enabled").checked = ir.enabled ?? false;
     const valueMap = {
@@ -580,9 +726,23 @@ function restoreSavedSteps(plan) {
 
 function initializeProtocolBuilder() {
   const stepSelect = document.querySelector("#new-step-kind");
-  stepSelect.innerHTML = Object.entries(stepDefinitions).map(([value, definition]) => `<option value="${value}">${definition.label} · ${badgeLabel(definition.status)}</option>`).join("");
+  targetModel = normalizeTargetModel(localStorage.getItem("spectraloop-chi-model")) || "760E";
+  benchState = localStorage.getItem("spectraloop-bench-state") === "available" ? "available" : "busy";
+  refreshTargetModelUI();
 
   document.querySelector("#protocol-preset").addEventListener("change", (event) => loadPreset(event.target.value));
+  document.querySelector("#protocol-model").addEventListener("change", (event) => {
+    targetModel = normalizeTargetModel(event.target.value) || "760E";
+    localStorage.setItem("spectraloop-chi-model", targetModel);
+    refreshTargetModelUI();
+    renderSteps();
+  });
+  document.querySelector("#protocol-bench-state").addEventListener("change", (event) => {
+    benchState = event.target.value === "available" ? "available" : "busy";
+    localStorage.setItem("spectraloop-bench-state", benchState);
+    refreshTargetModelUI();
+    refreshPreview();
+  });
   document.querySelector("#add-step").addEventListener("click", () => { steps.push(newStep(stepSelect.value)); renderSteps(); });
   document.querySelector("#step-list").addEventListener("input", (event) => {
     const index = Number(event.target.dataset.index);
@@ -617,17 +777,28 @@ function initializeProtocolBuilder() {
       refreshPreview();
       return;
     }
-    localStorage.setItem("spectraloop-chi760e-protocol", JSON.stringify(plan));
+    localStorage.setItem("spectraloop-chi760-protocol", JSON.stringify(plan));
     button.textContent = "Saved";
     setTimeout(() => { button.textContent = "Save locally"; }, 1200);
   });
   document.querySelector("#load-protocol").addEventListener("click", loadSavedPlan);
   document.querySelector("#export-protocol").addEventListener("click", exportPlan);
 
-  loadPreset("ocp-eis-cv");
+  const initialPreset = targetModel === "760B" ? "chi760b-cv" : "ocp-eis-cv";
+  if (presets[initialPreset].allowedModels.includes(targetModel)) loadPreset(initialPreset);
+  else loadPreset("blank");
 }
 
-const protocolCore = { buildValidatedPlan, finiteNumber, restoreSavedSteps, stepDefinitions, validatePlan };
+const protocolCore = {
+  MODEL_TECHNIQUE_PROFILES,
+  buildValidatedPlan,
+  finiteNumber,
+  normalizeTargetModel,
+  restoreSavedSteps,
+  stepDefinitions,
+  techniqueAvailableForModel,
+  validatePlan,
+};
 
 if (typeof globalThis !== "undefined") globalThis.SpectraLoopProtocolCore = protocolCore;
 

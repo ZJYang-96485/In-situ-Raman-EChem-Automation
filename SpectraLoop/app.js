@@ -10,7 +10,7 @@ const capabilityProfiles = {
   },
 };
 
-const allTechniques = ["CV", "i-t", "CA", "SWV", "EIS", "IMPE", "OCP", "STEP", "ISTEP/CPCS", "Chronocoulometry (CC) = ∫I dt from CA", "LSV", "GEIS", "iR compensation"];
+const labChiModels = Object.freeze(["760B", "760D", "760E"]);
 const defaultFormState = {
   chiModel: "760E",
   chiBackend: "local_bridge",
@@ -43,6 +43,7 @@ const storageState = document.querySelector("#storage-state");
 const storageDetail = document.querySelector("#storage-detail");
 const instrumentState = document.querySelector("#instrument-state");
 const instrumentDetail = document.querySelector("#instrument-detail");
+const instrumentAdapterLabel = document.querySelector("#instrument-adapter-label");
 const storageButton = document.querySelector("#select-storage-button");
 const refreshBridgeButton = document.querySelector("#refresh-bridge-button");
 const discoveryButton = document.querySelector("#discover-instrument-button");
@@ -79,7 +80,8 @@ function buildConfiguration() {
       model: state.chiModel,
       backend: state.chiBackend,
       connection_enabled: false,
-      identity_connection_enabled: state.chiBackend === "local_bridge"
+      identity_connection_enabled: state.chiModel === "760E"
+        && state.chiBackend === "local_bridge"
         && Boolean(bridgeSnapshot?.instrument?.discovery_enabled),
       experiment_control_enabled: false,
       automation_capabilities: capabilityProfiles[state.chiModel],
@@ -147,18 +149,30 @@ function validate() {
 function refreshCapabilities() {
   const model = document.querySelector("#chi-model").value;
   const profile = capabilityProfiles[model];
-  const statusFor = (technique) => Object.entries(profile).find(([, techniques]) => techniques.includes(technique))?.[0] || null;
-  const labelFor = (status) => ({ direct: "documented libec", derived: "derived", desktop: "desktop only", verify: "verify SDK" }[status]);
-  const iconFor = (status) => ({ direct: "✓", derived: "ƒ", desktop: "↗", verify: "?" }[status] || "—");
-  document.querySelector("#profile-title").textContent = `CHI ${model} automation surface`;
-  document.querySelector("#chi-capabilities").innerHTML = allTechniques
-    .map((technique) => {
-      const status = statusFor(technique);
-      return `<li class="${status || "unavailable"}">${iconFor(status)} ${technique}${status ? ` · ${labelFor(status)}` : ""}</li>`;
-    })
+  const labelFor = (status) => ({
+    direct: "Documented",
+    derived: "Derived output",
+    desktop: "Desktop route",
+    verify: "Verify SDK",
+  }[status]);
+  const available = Object.entries(profile)
+    .flatMap(([status, techniques]) => techniques.map((technique) => ({ status, technique })));
+  document.querySelector("#profile-title").textContent = `CHI ${model} automation functions`;
+  document.querySelector("#profile-summary").textContent = `${available.length} functions in the selected model profile`;
+  document.querySelector("#chi-capabilities").innerHTML = available
+    .map(({ status, technique }) => `
+      <li class="${status}">
+        <strong>${technique}</strong>
+        <small>${labelFor(status)}</small>
+      </li>
+    `)
     .join("");
-  document.querySelector("#profile-note").textContent =
-    "Documented libec entries come from the public model matrix. Derived, desktop-only, and verify-SDK entries are intentionally separate. None is a live connection check.";
+  const modelNotes = {
+    "760B": "CV and i-t are available for protocol planning. Live 760B control is not configured, so selecting this model cannot interrupt its current measurement.",
+    "760D": "The documented profile is available for planning. Real execution remains limited to the separately gated internal-dummy CV commissioning route.",
+    "760E": "Documented, derived, desktop, and verify-SDK functions are shown separately. Selecting a function does not by itself authorize hardware I/O.",
+  };
+  document.querySelector("#profile-note").textContent = modelNotes[model];
 }
 
 function refreshTaskFields() {
@@ -190,8 +204,39 @@ function selectedConfirmations() {
 function updateDiscoveryButton() {
   const allConfirmed = confirmationInputs.every((input) => input.checked);
   discoveryButton.disabled = !bridgeClient
+    || document.querySelector("#chi-model").value !== "760E"
     || !bridgeSnapshot?.instrument?.discovery_enabled
     || !allConfirmed;
+}
+
+function renderSelectedAdapter(snapshot) {
+  const model = document.querySelector("#chi-model").value;
+  instrumentAdapterLabel.textContent = `CHI ${model} adapter`;
+  confirmationFieldset.disabled = true;
+
+  if (model === "760B") {
+    instrumentState.textContent = "Measurement protected - offline planning only";
+    instrumentDetail.textContent = "No live 760B adapter is configured. CV and i-t plans can be prepared without touching the active measurement.";
+  } else if (model === "760D") {
+    const desktop = snapshot?.desktop_760d || {};
+    instrumentState.textContent = desktop.experiment_control_enabled
+      ? "Internal-dummy adapter ready"
+      : "Desktop adapter unavailable";
+    instrumentDetail.textContent = desktop.blocker
+      || "The 760D route is restricted to an explicitly approved internal-dummy CV on the Electrochemistry page.";
+  } else if (!snapshot) {
+    instrumentState.textContent = "Unavailable";
+    instrumentDetail.textContent = "No instrument request was made.";
+  } else if (snapshot.instrument.discovery_enabled) {
+    instrumentState.textContent = `${snapshot.instrument.target} - SDK check ready`;
+    instrumentDetail.textContent = snapshot.instrument.detail
+      || "The persistent worker is ready; physical instrument identity is not confirmed.";
+    confirmationFieldset.disabled = false;
+  } else {
+    instrumentState.textContent = `${snapshot.instrument.target} - adapter unavailable`;
+    instrumentDetail.textContent = snapshot.instrument.blocker || "A verified local adapter is required.";
+  }
+  updateDiscoveryButton();
 }
 
 function showBridgeUnavailable(message) {
@@ -200,12 +245,9 @@ function showBridgeUnavailable(message) {
   bridgeDetail.textContent = message;
   storageState.textContent = "Unavailable";
   storageDetail.textContent = "Start the local bridge before choosing a folder.";
-  instrumentState.textContent = "Unavailable";
-  instrumentDetail.textContent = "No instrument request was made.";
+  renderSelectedAdapter(null);
   setLabeledStatus(bridgeSummary, "Local bridge not connected", "amber");
   storageButton.disabled = true;
-  confirmationFieldset.disabled = true;
-  updateDiscoveryButton();
   refreshPreview();
 }
 
@@ -228,18 +270,7 @@ function renderBridgeStatus(snapshot) {
     storageDetail.textContent = "Choose a folder using the normal Windows folder picker.";
   }
 
-  const instrument = snapshot.instrument;
-  if (instrument.discovery_enabled) {
-    instrumentState.textContent = `${instrument.target} - SDK check ready`;
-    instrumentDetail.textContent = instrument.detail
-      || "The persistent worker is ready; physical instrument identity is not confirmed.";
-    confirmationFieldset.disabled = false;
-  } else {
-    instrumentState.textContent = `${instrument.target} · adapter unavailable`;
-    instrumentDetail.textContent = instrument.blocker || "A verified local adapter is required.";
-    confirmationFieldset.disabled = true;
-  }
-  updateDiscoveryButton();
+  renderSelectedAdapter(snapshot);
   refreshPreview();
 }
 
@@ -301,7 +332,7 @@ async function selectStorageFolder() {
 }
 
 async function discoverInstrumentIdentity() {
-  if (!bridgeClient || discoveryButton.disabled) return;
+  if (!bridgeClient || document.querySelector("#chi-model").value !== "760E" || discoveryButton.disabled) return;
   discoveryButton.disabled = true;
   bridgeActionStatus.textContent = "Running the read-only SDK capability check…";
   bridgeActionStatus.style.color = "var(--warning)";
@@ -339,6 +370,7 @@ function storeSetup() {
   }
   const setup = buildConfiguration();
   localStorage.setItem("spectraloop-setup", JSON.stringify(setup));
+  localStorage.setItem("spectraloop-chi-model", setup.potentiostat.model);
   formStatus.textContent = "Setup saved in this browser. Instrument and storage settings remain managed by the local bridge.";
   formStatus.style.color = "var(--safe)";
   return setup;
@@ -361,6 +393,7 @@ function restoreDefaults() {
   Object.entries(defaultFormState).forEach(([id, value]) => {
     document.querySelector(`#${toKebab(id)}`).value = value;
   });
+  localStorage.setItem("spectraloop-chi-model", defaultFormState.chiModel);
   refreshCapabilities();
   refreshTaskFields();
   refreshPreview();
@@ -369,7 +402,12 @@ function restoreDefaults() {
 }
 
 tabs.forEach((tab) => tab.addEventListener("click", () => openSection(tab.dataset.target)));
-document.querySelector("#chi-model").addEventListener("change", () => { refreshCapabilities(); refreshPreview(); });
+document.querySelector("#chi-model").addEventListener("change", (event) => {
+  localStorage.setItem("spectraloop-chi-model", event.target.value);
+  refreshCapabilities();
+  renderSelectedAdapter(bridgeSnapshot);
+  refreshPreview();
+});
 document.querySelector("#analysis-task").addEventListener("change", () => { refreshTaskFields(); refreshPreview(); });
 fieldIds.forEach((id) => document.querySelector(`#${toKebab(id)}`).addEventListener("input", refreshPreview));
 document.querySelector("#save-button").addEventListener("click", storeSetup);
@@ -380,6 +418,10 @@ storageButton.addEventListener("click", selectStorageFolder);
 discoveryButton.addEventListener("click", discoverInstrumentIdentity);
 confirmationInputs.forEach((input) => input.addEventListener("change", updateDiscoveryButton));
 
+const storedChiModel = localStorage.getItem("spectraloop-chi-model");
+if (labChiModels.includes(storedChiModel)) {
+  document.querySelector("#chi-model").value = storedChiModel;
+}
 refreshCapabilities();
 refreshTaskFields();
 refreshPreview();

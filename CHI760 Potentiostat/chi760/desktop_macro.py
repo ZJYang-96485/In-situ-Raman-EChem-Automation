@@ -61,6 +61,17 @@ class DummyCVPlan:
 
     @classmethod
     def from_web_protocol(cls, protocol: Mapping[str, Any]) -> "DummyCVPlan":
+        target_model = str(
+            protocol.get("target_model") or protocol.get("target_platform") or ""
+        ).upper().replace("CHI", "").strip()
+        if target_model != "760D":
+            raise DesktopMacroError(
+                "The desktop commissioning workflow requires target model CHI 760D."
+            )
+        if protocol.get("bench_state") != "available":
+            raise DesktopMacroError(
+                "The bench is locked for offline planning; mark it available only after the current measurement ends."
+            )
         validation = protocol.get("validation")
         if not isinstance(validation, Mapping) or validation.get("valid") is not True:
             raise DesktopMacroError("The browser protocol must pass validation first.")

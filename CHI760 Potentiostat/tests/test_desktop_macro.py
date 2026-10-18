@@ -16,6 +16,8 @@ from chi760.desktop_macro import (
 def valid_protocol() -> dict[str, object]:
     return {
         "protocol_name": "760D internal dummy check",
+        "target_model": "760D",
+        "bench_state": "available",
         "validation": {"valid": True, "errors": [], "warnings": []},
         "raman_sync": {"policy": "none"},
         "ir_compensation": {"enabled": False},
@@ -162,6 +164,16 @@ class DesktopMacroTests(unittest.TestCase):
         self.assertEqual("CV", controller.preparation_summary(token)["technique"])
 
     def test_external_or_broad_protocols_are_rejected(self) -> None:
+        protocol = valid_protocol()
+        protocol["target_model"] = "760B"
+        with self.assertRaisesRegex(DesktopMacroError, "requires target model CHI 760D"):
+            DummyCVPlan.from_web_protocol(protocol)
+
+        protocol = valid_protocol()
+        protocol["bench_state"] = "busy"
+        with self.assertRaisesRegex(DesktopMacroError, "locked for offline planning"):
+            DummyCVPlan.from_web_protocol(protocol)
+
         protocol = valid_protocol()
         steps = protocol["steps"]
         self.assertIsInstance(steps, list)

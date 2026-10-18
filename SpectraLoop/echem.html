@@ -29,7 +29,7 @@
           <div>
             <p class="eyebrow">LOCAL CHI CONNECTION</p>
             <h2 id="echem-bridge-heading">Instrument computer</h2>
-            <p class="card-note">Connect this page to the loopback service running beside the CHI 760E.</p>
+            <p class="card-note">Connect this page to the loopback service on the selected instrument computer.</p>
           </div>
           <button class="button ghost compact-button" id="echem-refresh-bridge" type="button">Check bridge</button>
         </div>
@@ -47,12 +47,12 @@
             <button class="button secondary compact-button" id="echem-select-storage" type="button" disabled>Choose storage folder</button>
           </div>
           <div class="bridge-item">
-            <span class="bridge-label">Real CHI 760E</span>
+            <span class="bridge-label" id="echem-instrument-label">Selected CHI instrument</span>
             <strong id="echem-instrument-state">Not checked</strong>
             <small id="echem-instrument-detail">A verified 32-bit worker is required before checking SDK capabilities.</small>
           </div>
         </div>
-        <details class="bridge-discovery-details">
+        <details class="bridge-discovery-details" id="echem-sdk-discovery-details">
           <summary>Read-only CHI SDK capability check</summary>
           <fieldset class="identity-confirmations" id="echem-identity-confirmations" disabled>
             <legend>Confirm the physical bench state</legend>
@@ -72,7 +72,7 @@
         </aside>
       </section>
 
-      <section class="bridge-panel echem-bridge-panel" aria-labelledby="chi760d-runner-heading">
+      <section class="bridge-panel echem-bridge-panel" id="chi760d-runner-panel" aria-labelledby="chi760d-runner-heading" hidden>
         <div class="bridge-heading">
           <div>
             <p class="eyebrow">CHI 760D DESKTOP MACRO</p>
@@ -114,9 +114,9 @@
 
       <section id="protocol-view" role="tabpanel" data-echem-view="protocol">
         <div class="compact-context">
-          <span><strong>CHI 760E plan</strong> · RDE optional</span>
+          <span><strong id="protocol-target-label">CHI 760E plan</strong> <span id="protocol-bench-label">· offline planning</span></span>
           <div class="legend" aria-label="Capability status legend">
-            <span class="badge libec">760E libec</span>
+            <span class="badge libec" id="protocol-libec-label">760E libec</span>
             <span class="badge derived">Derived</span>
             <span class="badge desktop">Desktop only</span>
             <span class="badge verify">Verify SDK</span>
@@ -128,8 +128,33 @@
             <section class="builder-panel">
               <p class="eyebrow">PROTOCOL</p>
               <label class="field">
+                <span>Target instrument</span>
+                <select id="protocol-model">
+                  <option value="760B">CHI 760B</option>
+                  <option value="760D">CHI 760D</option>
+                  <option value="760E" selected>CHI 760E</option>
+                </select>
+              </label>
+              <section class="model-function-panel" aria-live="polite" aria-labelledby="protocol-model-functions-heading">
+                <div class="model-function-heading">
+                  <span id="protocol-model-functions-heading">Available functions</span>
+                  <strong id="protocol-model-function-count">0</strong>
+                </div>
+                <div class="model-function-list" id="protocol-model-functions"></div>
+                <p id="protocol-model-function-note">Select an instrument to view its automation surface.</p>
+              </section>
+              <label class="field">
+                <span>Bench state</span>
+                <select id="protocol-bench-state">
+                  <option value="busy" selected>Measurement in progress - offline only</option>
+                  <option value="available">Available for approved commissioning</option>
+                </select>
+              </label>
+              <label class="field">
                 <span>Preset</span>
                 <select id="protocol-preset">
+                  <option value="chi760b-cv">760B CV plan</option>
+                  <option value="chi760b-it">760B amperometric i-t plan</option>
                   <option value="chi760d-dummy">760D internal dummy CV</option>
                   <option value="ocp-eis-cv">OCP → EIS → CV</option>
                   <option value="ca-forward-backward">OCP/EIS + forward/backward CA</option>
@@ -300,8 +325,8 @@
       </footer>
     </main>
     <script src="bridge-client.js?v=echem-bridge-5"></script>
-    <script src="echem-bridge.js?v=echem-bridge-5"></script>
-    <script src="protocols.js?v=echem-simulator-1"></script>
+    <script src="echem-bridge.js?v=echem-bridge-6"></script>
+    <script src="protocols.js?v=echem-models-1"></script>
     <script src="smoke-test.js?v=echem-simulator-1"></script>
     <script src="simulator.js?v=echem-simulator-1"></script>
     <script src="monitor.js?v=echem-sync-2"></script>

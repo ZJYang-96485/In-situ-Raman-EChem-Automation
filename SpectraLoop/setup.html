@@ -64,7 +64,6 @@
               <span>Instrument model</span>
               <select id="chi-model" name="chi-model">
                 <option value="760B">CHI 760B</option>
-                <option value="760C">CHI 760C</option>
                 <option value="760D">CHI 760D</option>
                 <option value="760E" selected>CHI 760E</option>
               </select>
@@ -101,7 +100,7 @@
                 <button class="button secondary compact-button" id="select-storage-button" type="button" disabled>Choose storage folder</button>
               </div>
               <div class="bridge-item">
-                <span class="bridge-label">CHI 760E adapter</span>
+                <span class="bridge-label" id="instrument-adapter-label">Selected CHI adapter</span>
                 <strong id="instrument-state">Not checked</strong>
                 <small id="instrument-detail">Experiment control is disabled unless a verified local adapter reports ready.</small>
               </div>
@@ -124,8 +123,9 @@
           </section>
           <section class="capability-card" aria-live="polite">
             <div>
-              <p class="eyebrow">PROFILE CAPABILITIES</p>
-              <h3 id="profile-title">CHI 760E automation surface</h3>
+              <p class="eyebrow">AVAILABLE FUNCTIONS</p>
+              <h3 id="profile-title">CHI 760E automation functions</h3>
+              <p id="profile-summary" class="capability-summary"></p>
             </div>
             <ul id="chi-capabilities" class="capability-list"></ul>
             <p id="profile-note" class="card-note"></p>
@@ -275,6 +275,6 @@
       </form>
     </main>
     <script src="bridge-client.js?v=bridge-session-4"></script>
-    <script src="app.js?v=bridge-session-4"></script>
+    <script src="app.js?v=chi-models-1"></script>
   </body>
 </html>

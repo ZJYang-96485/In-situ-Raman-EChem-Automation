@@ -8,12 +8,13 @@ const { describeSnapshot } = require("./echem-bridge.js");
 test("electrochemistry page exposes bridge, storage, and identity controls", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
   const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-5");
-  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-5");
+  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-6");
 
   assert.match(html, /id="echem-bridge-summary"/);
   assert.match(html, /id="echem-bridge-check-status"/);
   assert.match(html, /id="echem-select-storage"/);
   assert.match(html, /id="echem-discover-instrument"/);
+  assert.match(html, /id="protocol-model-functions"/);
   assert.match(html, /data-echem-confirmation="cell_output_off"/);
   assert.match(html, /id="chi760d-prepare-run"/);
   assert.match(html, /id="chi760d-start-run"/);
@@ -33,7 +34,7 @@ test("760D desktop status enables only the explicit internal-dummy workflow", ()
       scope: "internal_dummy_cv_only",
       remote_stop_available: false,
     },
-  });
+  }, "760D");
 
   assert.equal(view.header, "Local bridge connected - 760D dummy test ready");
   assert.equal(view.dummyReady, true);
@@ -52,7 +53,7 @@ test("unavailable adapter is visibly different from a disconnected bridge", () =
 
   assert.equal(view.header, "Local bridge connected · CHI control locked");
   assert.equal(view.storageLabel, "experiment-data");
-  assert.equal(view.instrumentLabel, "CHI 760E · adapter unavailable");
+  assert.equal(view.instrumentLabel, "CHI 760E - adapter unavailable");
   assert.equal(view.instrumentDetail, "No verified adapter.");
   assert.equal(view.discoveryEnabled, false);
 });
@@ -67,4 +68,18 @@ test("ready worker enables SDK inspection only, never experiment execution", () 
   assert.equal(view.instrumentLabel, "CHI 760E SDK - SDK check ready");
   assert.match(view.instrumentDetail, /physical instrument identity is not confirmed/);
   assert.equal(view.discoveryEnabled, true);
+});
+
+test("760B selection exposes planning while protecting an active measurement", () => {
+  const view = describeSnapshot({
+    storage: { configured: true, available: true, folder_name: "data" },
+    instrument: { target: "CHI 760E SDK", discovery_enabled: true },
+    desktop_760d: { experiment_control_enabled: true },
+  }, "760B");
+
+  assert.equal(view.header, "Local bridge connected · CHI control locked");
+  assert.equal(view.instrumentLabel, "CHI 760B - measurement protected");
+  assert.match(view.instrumentDetail, /active measurement remains untouched/);
+  assert.equal(view.discoveryEnabled, false);
+  assert.equal(view.dummyReady, false);
 });

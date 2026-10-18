@@ -29,6 +29,8 @@ class FakeProcess:
 def valid_760d_protocol() -> dict[str, object]:
     return {
         "protocol_name": "760D dummy",
+        "target_model": "760D",
+        "bench_state": "available",
         "validation": {"valid": True},
         "raman_sync": {"policy": "none"},
         "ir_compensation": {"enabled": False},

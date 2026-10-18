@@ -1,11 +1,22 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { finiteNumber, restoreSavedSteps, stepDefinitions, validatePlan } = require("./protocols.js");
+const {
+  MODEL_TECHNIQUE_PROFILES,
+  finiteNumber,
+  normalizeTargetModel,
+  restoreSavedSteps,
+  stepDefinitions,
+  techniqueAvailableForModel,
+  validatePlan,
+} = require("./protocols.js");
 
 function validPlan(step) {
   return {
     protocol_name: "offline validation",
+    target_model: "760E",
+    target_platform: "CHI 760E",
+    bench_state: "available",
     raman_sync: { policy: "after_equilibration" },
     ir_compensation: {
       enabled: false,
@@ -33,6 +44,52 @@ test("blank and non-finite numeric input cannot silently become zero", () => {
   assert.equal(finiteNumber("   "), null);
   assert.equal(finiteNumber("not a number"), null);
   assert.equal(finiteNumber("0"), 0);
+});
+
+test("760B profile permits only offline wait, CV, and amperometric i-t planning", () => {
+  assert.deepEqual(MODEL_TECHNIQUE_PROFILES["760B"], ["wait", "cv", "it"]);
+  assert.equal(techniqueAvailableForModel("cv", "CHI 760B"), true);
+  assert.equal(techniqueAvailableForModel("it", "760B"), true);
+  assert.equal(techniqueAvailableForModel("ca", "760B"), false);
+  assert.equal(normalizeTargetModel("chi 760b"), "760B");
+
+  const plan = validPlan({
+    name: "CA hold",
+    source_technique: "ca",
+    adaptation_status: "libec",
+    parameters: { voltage_v: 0.1, duration_s: 10, sample_period_s: 1, area_cm2: 1 },
+  });
+  plan.target_model = "760B";
+  plan.target_platform = "CHI 760B";
+  const result = validatePlan(plan);
+  assert.ok(result.errors.some((message) => message.includes("not documented for CHI 760B")));
+});
+
+test("busy bench remains valid for offline planning and blocks unsupported 760B iR", () => {
+  const plan = validPlan({
+    name: "760B CV",
+    source_technique: "cv",
+    adaptation_status: "libec",
+    parameters: {
+      initial_voltage_v: 0,
+      apex1_voltage_v: 0.2,
+      apex2_voltage_v: -0.2,
+      final_voltage_v: 0,
+      scan_rate_v_s: 0.05,
+      step_size_v: 0.002,
+      cycles: 1,
+    },
+  });
+  plan.target_model = "760B";
+  plan.target_platform = "CHI 760B";
+  plan.bench_state = "busy";
+  let result = validatePlan(plan);
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.warnings.some((message) => message.includes("measurement in progress")));
+
+  plan.ir_compensation.enabled = true;
+  result = validatePlan(plan);
+  assert.ok(result.errors.some((message) => message.includes("not available") && message.includes("760B")));
 });
 
 test("saved plans reject unknown steps and malformed parameters instead of dropping or defaulting them", () => {

@@ -8,15 +8,38 @@
 })(typeof globalThis === "object" ? globalThis : this, function buildEchemBridge() {
   "use strict";
 
-  function describeSnapshot(snapshot) {
+  function describeSnapshot(snapshot, selectedModel = "760E") {
     const storage = snapshot.storage || {};
     const instrument = snapshot.instrument || {};
     const desktop760d = snapshot.desktop_760d || {};
-    const dummyReady = desktop760d.experiment_control_enabled === true;
+    const model = ["760B", "760D", "760E"].includes(selectedModel) ? selectedModel : "760E";
+    const dummyReady = model === "760D" && desktop760d.experiment_control_enabled === true;
+    const sdkReady = model === "760E" && instrument.discovery_enabled === true;
+    let instrumentLabel;
+    let instrumentDetail;
+    if (model === "760B") {
+      instrumentLabel = "CHI 760B - measurement protected";
+      instrumentDetail = "Offline CV and i-t planning only. No live 760B adapter is configured, and the active measurement remains untouched.";
+    } else if (model === "760D") {
+      instrumentLabel = dummyReady
+        ? "CHI 760D - internal-dummy adapter ready"
+        : "CHI 760D - desktop adapter unavailable";
+      instrumentDetail = desktop760d.blocker
+        || (desktop760d.active?.running
+          ? `Run ${desktop760d.active.run_label} is active in the CHI desktop.`
+          : "The audited desktop adapter is limited to an explicitly approved internal-dummy CV.");
+    } else {
+      instrumentLabel = sdkReady
+        ? `${instrument.target || "CHI 760E"} - SDK check ready`
+        : `${instrument.target || "CHI 760E"} - adapter unavailable`;
+      instrumentDetail = sdkReady
+        ? instrument.detail || "The worker is ready; physical instrument identity is not confirmed."
+        : instrument.blocker || "A verified local vendor adapter is required.";
+    }
     return {
       header: dummyReady
         ? "Local bridge connected - 760D dummy test ready"
-        : instrument.discovery_enabled
+        : sdkReady
         ? "Local bridge connected - SDK worker ready"
         : "Local bridge connected · CHI control locked",
       storageLabel: storage.configured
@@ -27,13 +50,9 @@
         : storage.configured
           ? "Choose an available folder before recording data."
           : "Choose a folder using the normal Windows folder picker.",
-      instrumentLabel: instrument.discovery_enabled
-        ? `${instrument.target || "Instrument"} - SDK check ready`
-        : `${instrument.target || "Instrument"} · adapter unavailable`,
-      instrumentDetail: instrument.discovery_enabled
-        ? instrument.detail || "The worker is ready; physical instrument identity is not confirmed."
-        : instrument.blocker || "A verified local vendor adapter is required.",
-      discoveryEnabled: instrument.discovery_enabled === true,
+      instrumentLabel,
+      instrumentDetail,
+      discoveryEnabled: sdkReady,
       dummyReady,
       dummyState: desktop760d.state || "adapter_unavailable",
       dummyDetail: desktop760d.blocker
@@ -59,6 +78,10 @@
       discoveryButton: doc.querySelector("#echem-discover-instrument"),
       confirmationFieldset: doc.querySelector("#echem-identity-confirmations"),
       confirmationInputs: Array.from(doc.querySelectorAll("[data-echem-confirmation]")),
+      modelSelect: doc.querySelector("#protocol-model"),
+      instrumentLabel: doc.querySelector("#echem-instrument-label"),
+      sdkDetails: doc.querySelector("#echem-sdk-discovery-details"),
+      runnerPanel: doc.querySelector("#chi760d-runner-panel"),
       runnerState: doc.querySelector("#chi760d-runner-state"),
       runnerDetail: doc.querySelector("#chi760d-runner-detail"),
       runnerActionStatus: doc.querySelector("#chi760d-run-action-status"),
@@ -66,10 +89,14 @@
       runnerInputs: Array.from(doc.querySelectorAll("[data-chi760d-confirmation]")),
       prepareButton: doc.querySelector("#chi760d-prepare-run"),
       startButton: doc.querySelector("#chi760d-start-run"),
+      benchState: doc.querySelector("#protocol-bench-state"),
     };
     let client = null;
     let snapshot = null;
     let preparationToken = null;
+    let selectedModel = ["760B", "760D", "760E"].includes(elements.modelSelect?.value)
+      ? elements.modelSelect.value
+      : "760E";
 
     function dot(kind) {
       const marker = doc.createElement("span");
@@ -100,15 +127,18 @@
 
     function updateDiscoveryButton() {
       elements.discoveryButton.disabled = !client
+        || selectedModel !== "760E"
         || snapshot?.instrument?.discovery_enabled !== true
         || !elements.confirmationInputs.every((input) => input.checked);
     }
 
     function updateRunnerButtons() {
       const ready = Boolean(client)
+        && selectedModel === "760D"
         && snapshot?.desktop_760d?.experiment_control_enabled === true
         && snapshot?.storage?.available === true
-        && snapshot?.desktop_760d?.active?.running !== true;
+        && snapshot?.desktop_760d?.active?.running !== true
+        && elements.benchState?.value === "available";
       elements.prepareButton.disabled = !ready;
       elements.startButton.disabled = !ready
         || !preparationToken
@@ -122,8 +152,12 @@
       elements.bridgeDetail.textContent = message;
       elements.storageState.textContent = "Unavailable";
       elements.storageDetail.textContent = "Start the local bridge before choosing a folder.";
-      elements.instrumentState.textContent = "Not connected";
-      elements.instrumentDetail.textContent = "No request was sent to the CHI 760E.";
+      elements.instrumentState.textContent = selectedModel === "760B"
+        ? "Measurement protected - offline planning only"
+        : "Not connected";
+      elements.instrumentDetail.textContent = selectedModel === "760B"
+        ? "No live 760B adapter is configured. The active measurement remains untouched."
+        : `No request was sent to the CHI ${selectedModel}.`;
       elements.storageButton.disabled = true;
       elements.confirmationFieldset.disabled = true;
       labeledStatus(elements.runnerState, "Not connected", "amber");
@@ -136,8 +170,10 @@
 
     function renderStatus(nextSnapshot) {
       snapshot = nextSnapshot;
-      const view = describeSnapshot(snapshot);
-      labeledStatus(elements.summary, view.header, view.discoveryEnabled ? "safe" : "amber");
+      const view = describeSnapshot(snapshot, selectedModel);
+      const benchAvailable = elements.benchState?.value === "available";
+      const selectedAdapterReady = view.discoveryEnabled || (view.dummyReady && benchAvailable);
+      labeledStatus(elements.summary, view.header, selectedAdapterReady ? "safe" : "amber");
       labeledStatus(elements.bridgeState, "Connected to local service", "safe");
       elements.bridgeDetail.textContent = `${snapshot.service.name} ${snapshot.service.version} · loopback only`;
       elements.storageState.textContent = view.storageLabel;
@@ -148,14 +184,29 @@
       elements.confirmationFieldset.disabled = !view.discoveryEnabled;
       labeledStatus(
         elements.runnerState,
-        view.dummyReady ? "Internal-dummy CV ready" : "760D execution locked",
-        view.dummyReady ? "safe" : "amber",
+        view.dummyReady && benchAvailable ? "Internal-dummy CV ready" : "760D execution locked",
+        view.dummyReady && benchAvailable ? "safe" : "amber",
       );
-      elements.runnerDetail.textContent = view.dummyDetail;
-      elements.runnerDetail.className = `bridge-check-status ${view.dummyReady ? "safe" : "warning"}`;
-      elements.runnerFieldset.disabled = !view.dummyReady;
+      elements.runnerDetail.textContent = benchAvailable
+        ? view.dummyDetail
+        : "Bench is marked measurement in progress. Hardware preparation and execution are disabled.";
+      elements.runnerDetail.className = `bridge-check-status ${view.dummyReady && benchAvailable ? "safe" : "warning"}`;
+      elements.runnerFieldset.disabled = !view.dummyReady || !benchAvailable;
       updateDiscoveryButton();
       updateRunnerButtons();
+    }
+
+    function applyModelScope(nextModel) {
+      selectedModel = ["760B", "760D", "760E"].includes(nextModel) ? nextModel : "760E";
+      elements.instrumentLabel.textContent = `CHI ${selectedModel} adapter`;
+      elements.sdkDetails.hidden = selectedModel !== "760E";
+      elements.runnerPanel.hidden = selectedModel !== "760D";
+      if (selectedModel !== "760E") {
+        elements.confirmationInputs.forEach((input) => { input.checked = false; });
+      }
+      preparationToken = null;
+      if (snapshot) renderStatus(snapshot);
+      else showUnavailable("Start the local bridge on the selected instrument computer.");
     }
 
     function bridgeBaseUrl() {
@@ -228,7 +279,7 @@
     }
 
     async function discoverIdentity() {
-      if (!client || elements.discoveryButton.disabled) return;
+      if (!client || selectedModel !== "760E" || elements.discoveryButton.disabled) return;
       elements.discoveryButton.disabled = true;
       elements.actionStatus.textContent = "Waiting for local Windows approval, then checking SDK capabilities…";
       elements.actionStatus.style.color = "var(--warning)";
@@ -251,7 +302,7 @@
     }
 
     async function prepare760DRun() {
-      if (!client || elements.prepareButton.disabled) return;
+      if (!client || selectedModel !== "760D" || elements.prepareButton.disabled) return;
       const protocolCore = browserWindow.SpectraLoopProtocolCore;
       if (!protocolCore || typeof protocolCore.buildValidatedPlan !== "function") {
         elements.runnerActionStatus.textContent = "The protocol builder is unavailable.";
@@ -277,7 +328,7 @@
     }
 
     async function start760DRun() {
-      if (!client || !preparationToken || elements.startButton.disabled) return;
+      if (!client || selectedModel !== "760D" || !preparationToken || elements.startButton.disabled) return;
       elements.startButton.disabled = true;
       elements.runnerActionStatus.textContent = "Waiting for approval in the local Windows dialog...";
       elements.runnerActionStatus.style.color = "var(--warning)";
@@ -302,6 +353,14 @@
     elements.prepareButton.addEventListener("click", prepare760DRun);
     elements.startButton.addEventListener("click", start760DRun);
     elements.runnerInputs.forEach((input) => input.addEventListener("change", updateRunnerButtons));
+    elements.benchState?.addEventListener("change", () => {
+      if (snapshot) renderStatus(snapshot);
+      else updateRunnerButtons();
+    });
+    doc.addEventListener("spectraloop:protocol-scope-changed", (event) => {
+      applyModelScope(event.detail?.targetModel);
+    });
+    applyModelScope(elements.modelSelect?.value);
     refresh();
 
     return { refresh };
