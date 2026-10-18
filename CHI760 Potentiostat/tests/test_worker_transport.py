@@ -63,6 +63,7 @@ class WorkerTransportTests(unittest.TestCase):
         self.assertEqual("sdk_worker.py", config.worker_script.name)
         self.assertEqual(config.sdk_directory, config.runtime_directory)
         self.assertEqual("libec760e.dll", config.dll_name)
+        self.assertNotIn("--enable-chi760e-commissioning", config.command())
 
     def test_persistent_process_handles_multiple_requests(self) -> None:
         worker_script = (

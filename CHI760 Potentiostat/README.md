@@ -41,7 +41,10 @@ and restricts browser origins. On Windows the normal launcher starts a
 persistent repository-local 32-bit 760E SDK worker, when that runtime is
 installed, and communicates over private stdin/stdout JSON pipes. The worker
 opens no network port. A local Windows approval is required before any SDK
-getter is called. The 760E worker deliberately has no experiment command.
+getter is called. The normal launcher exposes no experiment command. A
+separately gated worker commissioning mode now implements one bounded CV job
+contract, but it is not connected to the web bridge and is disabled unless the
+worker process is started with an explicit commissioning flag.
 
 The SDK capability check reports the model series compiled into `libec`, not a
 verified physical instrument identity. The supplied API has no serial-number or
@@ -70,11 +73,18 @@ override it without changing source code by setting
 `SPECTRALOOP_CHI_RUNTIME_DIR`, `SPECTRALOOP_CHI_DLL`, or
 `SPECTRALOOP_CHI_INSTRUMENT`.
 
-The persistent protocol permits only status, an explicitly acknowledged DLL
-load check, approved SDK capability discovery, and shutdown. It intentionally
-has no experiment command. The inspected CHI 760D desktop package contains no
-matching `libec760d.dll`; it cannot be selected through the 760E worker merely
-by renaming the executable or folder.
+By default, the persistent protocol permits only status, an explicitly
+acknowledged DLL load check, approved SDK capability discovery, and shutdown.
+An explicit `--enable-chi760e-commissioning` process flag adds asynchronous
+`cv-start`, `cv-status`, `cv-stop`, and paginated `cv-result` worker commands.
+Every start still requires the complete local safety confirmation set and a
+strict 760E-only CV plan: +/-0.25 V, 0.01-0.2 V/s, 0.001-0.01 V step, no more
+than 10 seconds quiet time, positive initial scan, and exactly two sweeps. The
+worker verifies every parameter readback, calls `CHI_Stop` during cleanup, and
+clears and verifies the `m_bCellOn` parameter. No current launcher or bridge
+enables this mode. The inspected CHI 760D desktop package contains no matching
+`libec760d.dll`; it cannot be selected through the 760E worker merely by
+renaming the executable or folder.
 
 ## CHI 760D internal-dummy commissioning path
 
