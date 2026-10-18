@@ -151,7 +151,7 @@ function simulateIRPreparation(settings, scenario, stepIndex, startS) {
     trials,
     selected_ru_ohm: acceptedTrial?.selected_ru_ohm ?? null,
     requested_compensation_ohm: acceptedTrial
-      ? rounded(acceptedTrial.ru_ohm * evaluated.accepted_fraction, 6)
+      ? rounded(acceptedTrial.selected_ru_ohm * evaluated.accepted_fraction, 6)
       : null,
     duration_s: rounded(settings.ocp_stabilization_s + trials.length * settings.ru_settle_s),
     state: acceptedTrial ? "simulated_applied" : "simulated_uncompensated",

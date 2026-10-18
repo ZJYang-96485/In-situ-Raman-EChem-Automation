@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const { stepDefinitions } = require("./protocols.js");
 const { buildSimulationSession, evaluateIRFractions } = require("./simulator.js");
@@ -76,6 +78,11 @@ test("iR simulation stops at 95 percent or accepts the valid tenth trial", () =>
   assert.equal(early.accepted_trial, 4);
   assert.equal(early.accepted_fraction, 0.95);
   assert.equal(early.trials.length, 4);
+  assert.ok(Number.isFinite(early.requested_compensation_ohm));
+  assert.equal(
+    early.requested_compensation_ohm,
+    Number((early.selected_ru_ohm * early.accepted_fraction).toFixed(6)),
+  );
   assert.ok(early.trials.every((trial) => trial.ru_attempts_ohm.length === 5));
   assert.ok(early.trials.every((trial) => trial.repeatability_passed));
   assert.equal(standard.electrochemistry[0].ir_compensation.preparation_result_id, early.result_id);
@@ -155,4 +162,16 @@ test("invalid trial values and invalid protocols cannot be accepted silently", (
 
   const invalidPlan = plan([step("ca", 1, { duration_s: null })]);
   assert.throws(() => buildSimulationSession(invalidPlan), /Duration/);
+});
+
+test("electrochemistry page loads the cache-busted simulator before its runner", () => {
+  const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
+  const runner = fs.readFileSync(path.join(__dirname, "echem.js"), "utf8");
+  const simulatorAsset = "simulator.js?v=echem-simulator-2";
+  const runnerAsset = "echem.js?v=echem-simulator-2";
+
+  assert.ok(html.indexOf(simulatorAsset) >= 0);
+  assert.ok(html.indexOf(simulatorAsset) < html.indexOf(runnerAsset));
+  assert.match(runner, /typeof simulator\.buildSimulationSession !== "function"/);
+  assert.match(runner, /Refresh the page with Ctrl\+F5/);
 });

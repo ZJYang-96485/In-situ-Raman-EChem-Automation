@@ -30,8 +30,12 @@ function runConnectionFreeSimulation() {
   button.textContent = "Simulating…";
   status.textContent = "Generating deterministic synchronized data…";
   try {
+    const simulator = globalThis.SpectraLoopSimulatorCore;
+    if (!simulator || typeof simulator.buildSimulationSession !== "function") {
+      throw new Error("The simulator module did not load. Refresh the page with Ctrl+F5 and try again.");
+    }
     const scenario = document.querySelector("#simulation-scenario").value;
-    const session = globalThis.SpectraLoopSimulatorCore.buildSimulationSession(plan, { scenario });
+    const session = simulator.buildSimulationSession(plan, { scenario });
     globalThis.SpectraLoopMonitorCore.loadSimulationSession(session, { autoplay: true });
     status.textContent = `${session.electrochemistry.length} EChem points and ${session.raman.length} Raman frames generated · 0 hardware calls.`;
     showEchemView("data");
