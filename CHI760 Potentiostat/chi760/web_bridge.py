@@ -1,8 +1,9 @@
 """Loopback-only web bridge for the SpectraLoop browser interface.
 
 The bridge is deliberately small and dependency-free.  It gives a browser UI
-an authenticated local boundary for storage selection and a future verified
-instrument adapter without exposing the instrument computer to the network.
+an authenticated local boundary for storage selection, read-only discovery,
+and explicitly enabled commissioning adapters without exposing the instrument
+computer to the network.
 
 The default gateway is unavailable and performs zero hardware calls.  A live
 gateway has to be supplied explicitly after the matching vendor interface has
@@ -42,15 +43,17 @@ from .desktop_macro import (
 )
 from .live_backend import CHI760ELiveBackend, LiveConnectionState
 from .worker_transport import (
+    CHI760ECommissioningError,
     DEFAULT_WORKER_TIMEOUT_S,
     PersistentSDKWorker,
+    SDKWorkerCommissioningGateway,
     SDKWorkerDiscoveryGateway,
     WorkerLaunchConfig,
     default_worker_launch_config,
 )
 
 
-BRIDGE_VERSION = "0.3.0"
+BRIDGE_VERSION = "0.4.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -73,6 +76,17 @@ REQUIRED_760D_RUN_CONFIRMATIONS = frozenset(
         "chi_desktop_closed",
         "limits_reviewed",
         "stop_button_accessible",
+    }
+)
+REQUIRED_760E_RUN_CONFIRMATIONS = frozenset(
+    {
+        "target_is_760e",
+        "no_other_chi_measurement_running",
+        "chi_desktop_closed",
+        "internal_dummy_cell_connected",
+        "external_sample_disconnected",
+        "electrode_leads_verified",
+        "cell_output_confirmed_off",
     }
 )
 
@@ -256,6 +270,42 @@ def native_760d_experiment_approval(summary: Mapping[str, Any]) -> bool:
         root.destroy()
 
 
+def native_760e_experiment_approval(summary: Mapping[str, Any]) -> bool:
+    """Require instrument-computer approval immediately before worker start."""
+
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+    except ImportError as error:  # pragma: no cover - platform Python packaging
+        raise BridgeRequestError(
+            "local_confirmation_unavailable",
+            "This Python installation cannot display the local experiment confirmation.",
+            503,
+        ) from error
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+        return bool(
+            messagebox.askyesno(
+                "Start CHI 760E internal dummy CV",
+                "Allow one real CHI 760E CV on the INTERNAL DUMMY CELL?\n\n"
+                f"Initial: {summary.get('initial_potential_v')} V\n"
+                f"High: {summary.get('high_potential_v')} V\n"
+                f"Low: {summary.get('low_potential_v')} V\n"
+                f"Scan rate: {summary.get('scan_rate_v_s')} V/s\n\n"
+                "Confirm no other CHI measurement is running, CHI desktop software "
+                "is closed, external samples are disconnected, and the cell output "
+                "is off before starting.",
+                parent=root,
+                icon="warning",
+            )
+        )
+    finally:
+        root.destroy()
+
+
 def default_config_path() -> Path:
     """Return a per-user settings path without embedding a computer-specific path."""
 
@@ -361,8 +411,13 @@ class BridgeState:
     discovery_approval: ApprovalPrompt = native_discovery_approval
     desktop_760d: CHI760DDesktopController | None = None
     experiment_approval: ExperimentApprovalPrompt = native_760d_experiment_approval
+    commissioning_760e: SDKWorkerCommissioningGateway | None = None
+    chi760e_experiment_approval: ExperimentApprovalPrompt = (
+        native_760e_experiment_approval
+    )
 
     def status_payload(self) -> dict[str, Any]:
+        instrument_status = dict(self.gateway.public_status())
         desktop_status = (
             self.desktop_760d.public_status()
             if self.desktop_760d is not None
@@ -378,6 +433,11 @@ class BridgeState:
                 "active": None,
             }
         )
+        chi760e_enabled = (
+            instrument_status.get("experiment_control_enabled") is True
+            and self.commissioning_760e is not None
+        )
+        chi760d_enabled = desktop_status.get("experiment_control_enabled") is True
         return {
             "api_version": "v1",
             "service": {
@@ -386,17 +446,25 @@ class BridgeState:
                 "binding": "loopback_only",
             },
             "storage": self.storage.public_status(),
-            "instrument": dict(self.gateway.public_status()),
+            "instrument": instrument_status,
             "desktop_760d": desktop_status,
             "safety": {
                 "mode": (
-                    "chi760d_internal_dummy"
-                    if desktop_status.get("experiment_control_enabled") is True
+                    "chi760e_internal_dummy"
+                    if chi760e_enabled
+                    else "chi760d_internal_dummy"
+                    if chi760d_enabled
                     else "sdk_discovery_only"
                 ),
-                "experiments_enabled": desktop_status.get("experiment_control_enabled") is True,
-                "experiment_scope": "internal_dummy_bounded_cv_series",
-                "remote_stop_available": False,
+                "experiments_enabled": chi760e_enabled or chi760d_enabled,
+                "experiment_scope": (
+                    "internal_dummy_bounded_cv"
+                    if chi760e_enabled
+                    else "internal_dummy_bounded_cv_series"
+                    if chi760d_enabled
+                    else None
+                ),
+                "remote_stop_available": chi760e_enabled,
                 "raman_enabled": False,
                 "laser_enabled": False,
                 "automated_decisions_enabled": False,
@@ -481,9 +549,125 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                 )
                 self._json_response(HTTPStatus.OK, {"storage": result})
                 return
+            if route == "/v1/instrument/760e/prepare":
+                controller_760e = self.server.bridge_state.commissioning_760e
+                if controller_760e is None:
+                    raise BridgeRequestError(
+                        "chi760e_commissioning_unavailable",
+                        "The CHI 760E commissioning adapter is not configured.",
+                        409,
+                    )
+                plan = payload.get("plan")
+                if not isinstance(plan, Mapping):
+                    raise BridgeRequestError(
+                        "invalid_plan", "A bounded CHI 760E CV plan is required."
+                    )
+                storage_root = self.server.bridge_state.storage.root
+                if storage_root is None or not storage_root.is_dir():
+                    raise BridgeRequestError(
+                        "storage_required", "Choose an available storage folder first."
+                    )
+                preparation = controller_760e.prepare(plan, storage_root)
+                self._json_response(
+                    HTTPStatus.OK, {"preparation": preparation}
+                )
+                return
+            if route == "/v1/instrument/760e/start":
+                controller_760e = self.server.bridge_state.commissioning_760e
+                if controller_760e is None:
+                    raise BridgeRequestError(
+                        "chi760e_commissioning_unavailable",
+                        "The CHI 760E commissioning adapter is not configured.",
+                        409,
+                    )
+                confirmations = payload.get("confirmations")
+                if not isinstance(confirmations, Mapping):
+                    raise BridgeRequestError(
+                        "confirmations_required",
+                        "All 760E internal-dummy safety confirmations are required.",
+                    )
+                missing = sorted(
+                    key
+                    for key in REQUIRED_760E_RUN_CONFIRMATIONS
+                    if confirmations.get(key) is not True
+                )
+                if missing:
+                    raise BridgeRequestError(
+                        "confirmations_required",
+                        f"Missing confirmations: {', '.join(missing)}.",
+                    )
+                preparation_token = payload.get("preparation_token")
+                if not isinstance(preparation_token, str) or not preparation_token:
+                    raise BridgeRequestError(
+                        "preparation_required",
+                        "Prepare the 760E run before starting it.",
+                    )
+                summary = controller_760e.preparation_summary(preparation_token)
+                if not self.server.bridge_state.chi760e_experiment_approval(summary):
+                    raise BridgeRequestError(
+                        "local_approval_declined",
+                        "The 760E run was not approved on the instrument computer.",
+                        409,
+                    )
+                result = controller_760e.start(
+                    preparation_token,
+                    {**dict(confirmations), "commissioning_approved": True},
+                )
+                self._json_response(HTTPStatus.OK, {"run": result})
+                return
+            if route == "/v1/instrument/760e/status":
+                controller_760e = self.server.bridge_state.commissioning_760e
+                if controller_760e is None:
+                    raise BridgeRequestError(
+                        "chi760e_commissioning_unavailable",
+                        "The CHI 760E commissioning adapter is not configured.",
+                        409,
+                    )
+                job_id = payload.get("job_id")
+                if not isinstance(job_id, str) or not job_id:
+                    raise BridgeRequestError(
+                        "job_id_required", "A CHI 760E job id is required."
+                    )
+                result = controller_760e.job_status(job_id)
+                self._json_response(HTTPStatus.OK, {"run": result})
+                return
+            if route == "/v1/instrument/760e/stop":
+                controller_760e = self.server.bridge_state.commissioning_760e
+                if controller_760e is None:
+                    raise BridgeRequestError(
+                        "chi760e_commissioning_unavailable",
+                        "The CHI 760E commissioning adapter is not configured.",
+                        409,
+                    )
+                job_id = payload.get("job_id")
+                if not isinstance(job_id, str) or not job_id:
+                    raise BridgeRequestError(
+                        "job_id_required", "A CHI 760E job id is required."
+                    )
+                result = controller_760e.stop(job_id)
+                self._json_response(HTTPStatus.OK, {"run": result})
+                return
+            if route == "/v1/instrument/760e/result":
+                controller_760e = self.server.bridge_state.commissioning_760e
+                if controller_760e is None:
+                    raise BridgeRequestError(
+                        "chi760e_commissioning_unavailable",
+                        "The CHI 760E commissioning adapter is not configured.",
+                        409,
+                    )
+                job_id = payload.get("job_id")
+                if not isinstance(job_id, str) or not job_id:
+                    raise BridgeRequestError(
+                        "job_id_required", "A CHI 760E job id is required."
+                    )
+                offset = payload.get("offset", 0)
+                limit = payload.get("limit", 4096)
+                result = controller_760e.result_page(job_id, offset, limit)
+                self._json_response(HTTPStatus.OK, {"result": result})
+                return
             if route == "/v1/instrument/760d/prepare":
-                controller = self.server.bridge_state.desktop_760d
-                if controller is None:
+                controller_760d = self.server.bridge_state.desktop_760d
+                if controller_760d is None:
                     raise BridgeRequestError(
                         "desktop_adapter_unavailable",
                         "The CHI 760D desktop adapter is not configured.",
@@ -499,14 +683,14 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                     raise BridgeRequestError(
                         "storage_required", "Choose an available storage folder first."
                     )
-                preparation = controller.prepare(protocol, storage_root)
+                preparation = controller_760d.prepare(protocol, storage_root)
                 self._json_response(
                     HTTPStatus.OK, {"preparation": preparation}
                 )
                 return
             if route == "/v1/instrument/760d/run":
-                controller = self.server.bridge_state.desktop_760d
-                if controller is None:
+                controller_760d = self.server.bridge_state.desktop_760d
+                if controller_760d is None:
                     raise BridgeRequestError(
                         "desktop_adapter_unavailable",
                         "The CHI 760D desktop adapter is not configured.",
@@ -533,14 +717,14 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                     raise BridgeRequestError(
                         "preparation_required", "Prepare the 760D run before starting it."
                     )
-                summary = controller.preparation_summary(preparation_token)
+                summary = controller_760d.preparation_summary(preparation_token)
                 if not self.server.bridge_state.experiment_approval(summary):
                     raise BridgeRequestError(
                         "local_approval_declined",
                         "The 760D run was not approved on the instrument computer.",
                         409,
                     )
-                result = controller.execute(preparation_token)
+                result = controller_760d.execute(preparation_token)
                 self._json_response(HTTPStatus.OK, {"run": result})
                 return
             if route == "/v1/instrument/discover":
@@ -597,6 +781,12 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
             self._json_error(
                 HTTPStatus.CONFLICT,
                 "chi760d_macro_blocked",
+                str(error),
+            )
+        except CHI760ECommissioningError as error:
+            self._json_error(
+                HTTPStatus.CONFLICT,
+                "chi760e_commissioning_blocked",
                 str(error),
             )
         except (BackendStateError, InvalidVendorResponseError, VendorCallError, VendorCallTimeoutError) as error:
@@ -815,10 +1005,18 @@ def _build_worker_gateway(arguments: argparse.Namespace) -> DiscoveryGateway:
         sdk_directory=arguments.sdk_dir,
         runtime_directory=arguments.runtime_dir,
         dll_name=arguments.dll_name,
+        enable_chi760e_commissioning=arguments.enable_chi760e_commissioning,
     )
     try:
+        worker = PersistentSDKWorker(config, timeout_s=arguments.worker_timeout)
+        if arguments.enable_chi760e_commissioning:
+            return SDKWorkerCommissioningGateway(
+                worker,
+                target=arguments.instrument_label,
+                execution_enabled=True,
+            )
         return SDKWorkerDiscoveryGateway(
-            PersistentSDKWorker(config, timeout_s=arguments.worker_timeout),
+            worker,
             target=arguments.instrument_label,
         )
     except (VendorCallError, ValueError) as error:
@@ -892,6 +1090,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--disable-chi-worker", action="store_true")
     parser.add_argument(
+        "--enable-chi760e-commissioning",
+        action="store_true",
+        help=(
+            "Enable only the bounded CHI 760E internal-dummy CV worker workflow."
+        ),
+    )
+    parser.add_argument(
         "--chi760d-exe",
         type=Path,
         default=_runtime_path(
@@ -904,6 +1109,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Enable only the bounded CHI 760D internal-dummy CV/wait series workflow.",
     )
     args = parser.parse_args(argv)
+    if args.disable_chi_worker and args.enable_chi760e_commissioning:
+        parser.error(
+            "--disable-chi-worker and --enable-chi760e-commissioning cannot be combined"
+        )
+    if args.enable_chi760d_dummy and args.enable_chi760e_commissioning:
+        parser.error(
+            "760D and 760E commissioning modes cannot be enabled in one bridge"
+        )
 
     token = secrets.token_urlsafe(32)
     site_directory = args.site_dir
@@ -911,10 +1124,14 @@ def main(argv: list[str] | None = None) -> int:
         candidate = Path(__file__).resolve().parents[2] / "SpectraLoop"
         site_directory = candidate if candidate.is_dir() else None
     gateway = _build_worker_gateway(args)
+    commissioning_760e = (
+        gateway if isinstance(gateway, SDKWorkerCommissioningGateway) else None
+    )
     state = BridgeState(
         token=token,
         storage=StorageSettings(args.config),
         gateway=gateway,
+        commissioning_760e=commissioning_760e,
         desktop_760d=CHI760DDesktopController(
             args.chi760d_exe,
             execution_enabled=args.enable_chi760d_dummy,
@@ -938,7 +1155,12 @@ def main(argv: list[str] | None = None) -> int:
     browser_url = _browser_url(args.web_url or local_start_url, token)
     print(f"SpectraLoop local bridge {BRIDGE_VERSION}")
     print(f"Listening only on http://127.0.0.1:{port}")
-    if args.enable_chi760d_dummy:
+    if args.enable_chi760e_commissioning:
+        print(
+            "Mode: CHI 760E internal-dummy CV commissioning enabled; "
+            "all other experiments are locked"
+        )
+    elif args.enable_chi760d_dummy:
         print("Mode: CHI 760D internal-dummy CV/wait series enabled; external-cell experiments are locked")
     else:
         print("Mode: SDK discovery only; experiments are disabled")

@@ -810,7 +810,7 @@ class LiveCVRunner:
                     raise TimeoutError("commissioning CV exceeded its bounded timeout")
                 sleep(0.05)
 
-            capacity = CV_COMMISSIONING_LIMITS["data_capacity"]
+            capacity = int(CV_COMMISSIONING_LIMITS["data_capacity"])
             x_buffer = (ctypes.c_float * capacity)()
             y_buffer = (ctypes.c_float * capacity)()
             payload["vendor_functions_called"] += 1

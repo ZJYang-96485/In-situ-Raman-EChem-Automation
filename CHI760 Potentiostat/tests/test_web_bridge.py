@@ -78,6 +78,108 @@ class FakeReadyGateway:
         }
 
 
+class Fake760ECommissioningController(FakeReadyGateway):
+    def __init__(self) -> None:
+        super().__init__()
+        self.prepares: list[tuple[dict[str, object], Path]] = []
+        self.starts: list[tuple[str, dict[str, object]]] = []
+        self.statuses: list[str] = []
+        self.stops: list[str] = []
+        self.results: list[tuple[str, int, int]] = []
+
+    def public_status(self) -> dict[str, object]:
+        return {
+            **super().public_status(),
+            "state": "ready_for_internal_dummy",
+            "experiment_control_enabled": True,
+            "experiment_scope": "internal_dummy_bounded_cv",
+            "remote_stop_available": True,
+            "active": None,
+        }
+
+    def prepare(
+        self, plan: dict[str, object], data_root: Path
+    ) -> dict[str, object]:
+        self.prepares.append((dict(plan), data_root))
+        return {
+            "preparation_token": "prepared-760e",
+            "run_label": "test-run-760e",
+            "summary": dict(plan),
+            "requires_local_approval": True,
+            "remote_stop_available": True,
+        }
+
+    def preparation_summary(self, preparation_token: str) -> dict[str, object]:
+        if preparation_token != "prepared-760e":
+            raise ValueError("invalid preparation")
+        return {"target_model": "760E", **bounded_760e_plan()}
+
+    def start(
+        self, preparation_token: str, confirmations: dict[str, object]
+    ) -> dict[str, object]:
+        self.starts.append((preparation_token, dict(confirmations)))
+        return {
+            "started": True,
+            "job_id": "job-760e",
+            "state": "starting",
+            "run_label": "test-run-760e",
+            "remote_stop_available": True,
+        }
+
+    def job_status(self, job_id: str) -> dict[str, object]:
+        self.statuses.append(job_id)
+        return {
+            "job_id": job_id,
+            "state": "completed",
+            "run_label": "test-run-760e",
+            "data_points": 2,
+            "data_saved": True,
+        }
+
+    def stop(self, job_id: str) -> dict[str, object]:
+        self.stops.append(job_id)
+        return {"job_id": job_id, "state": "stopping"}
+
+    def result_page(self, job_id: str, offset: int, limit: int) -> dict[str, object]:
+        self.results.append((job_id, offset, limit))
+        return {
+            "job_id": job_id,
+            "offset": offset,
+            "count": 2,
+            "total": 2,
+            "next_offset": None,
+            "x_values": [-0.1, 0.1],
+            "y_values": [-1e-6, 1e-6],
+            "units": {"x": "V", "y": "A"},
+        }
+
+
+def bounded_760e_plan() -> dict[str, object]:
+    return {
+        "target_model": "760E",
+        "initial_potential_v": 0.0,
+        "high_potential_v": 0.2,
+        "low_potential_v": -0.2,
+        "initial_scan_direction": "positive",
+        "scan_rate_v_s": 0.05,
+        "potential_step_v": 0.002,
+        "quiet_time_s": 0.0,
+        "sweep_segments": 2,
+    }
+
+
+def browser_760e_confirmations() -> dict[str, bool]:
+    return {
+        "target_is_760e": True,
+        "no_other_chi_measurement_running": True,
+        "chi_desktop_closed": True,
+        "internal_dummy_cell_connected": True,
+        "external_sample_disconnected": True,
+        "electrode_leads_verified": True,
+        "cell_output_confirmed_off": True,
+    }
+
+
 class WebBridgeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -320,6 +422,116 @@ class WebBridgeTests(unittest.TestCase):
         self.assertEqual(404, caught.exception.code)
         caught.exception.close()
         self.assertEqual(0, self.state.gateway.hardware_calls)  # type: ignore[attr-defined]
+
+    def test_760e_routes_are_locked_without_explicit_commissioning_adapter(self) -> None:
+        self.state.storage.configure(self.selected_folder)
+        with self.assertRaises(HTTPError) as caught:
+            self.request(
+                "/v1/instrument/760e/prepare",
+                method="POST",
+                payload={"plan": bounded_760e_plan()},
+            )
+
+        self.assertEqual(409, caught.exception.code)
+        self.assertEqual(
+            "chi760e_commissioning_unavailable",
+            self.error_payload(caught.exception)["error"]["code"],  # type: ignore[index]
+        )
+
+    def test_normal_launcher_does_not_enable_760e_commissioning(self) -> None:
+        launcher = Path(__file__).resolve().parents[2] / "Start SpectraLoop.cmd"
+        text = launcher.read_text(encoding="utf-8")
+
+        self.assertNotIn("--enable-chi760e-commissioning", text)
+
+    def test_760e_prepare_start_status_stop_and_result_are_separately_gated(self) -> None:
+        controller = Fake760ECommissioningController()
+        self.state.gateway = controller
+        self.state.commissioning_760e = controller  # type: ignore[assignment]
+
+        with self.assertRaises(HTTPError) as caught:
+            self.request(
+                "/v1/instrument/760e/prepare",
+                method="POST",
+                payload={"plan": bounded_760e_plan()},
+            )
+        self.assertEqual(400, caught.exception.code)
+        caught.exception.close()
+        self.assertEqual([], controller.prepares)
+
+        self.state.storage.configure(self.selected_folder)
+        response, raw = self.request(
+            "/v1/instrument/760e/prepare",
+            method="POST",
+            payload={"plan": bounded_760e_plan()},
+        )
+        preparation = json.loads(raw.decode("utf-8"))["preparation"]
+        self.assertEqual(200, response.status)
+        self.assertEqual("prepared-760e", preparation["preparation_token"])
+        self.assertEqual(1, len(controller.prepares))
+        self.assertEqual([], controller.starts)
+        self.assertNotIn(str(self.selected_folder), raw.decode("utf-8"))
+
+        self.state.chi760e_experiment_approval = lambda _summary: False
+        with self.assertRaises(HTTPError) as caught:
+            self.request(
+                "/v1/instrument/760e/start",
+                method="POST",
+                payload={
+                    "preparation_token": "prepared-760e",
+                    "confirmations": browser_760e_confirmations(),
+                },
+            )
+        self.assertEqual(409, caught.exception.code)
+        caught.exception.close()
+        self.assertEqual([], controller.starts)
+
+        self.state.chi760e_experiment_approval = lambda _summary: True
+        response, raw = self.request(
+            "/v1/instrument/760e/start",
+            method="POST",
+            payload={
+                "preparation_token": "prepared-760e",
+                "confirmations": browser_760e_confirmations(),
+            },
+        )
+        run = json.loads(raw.decode("utf-8"))["run"]
+        self.assertEqual(200, response.status)
+        self.assertEqual("job-760e", run["job_id"])
+        self.assertTrue(controller.starts[0][1]["commissioning_approved"])
+
+        response, raw = self.request(
+            "/v1/instrument/760e/status",
+            method="POST",
+            payload={"job_id": "job-760e"},
+        )
+        self.assertEqual(200, response.status)
+        self.assertEqual("completed", json.loads(raw)["run"]["state"])
+
+        response, raw = self.request(
+            "/v1/instrument/760e/result",
+            method="POST",
+            payload={"job_id": "job-760e", "offset": 0, "limit": 100},
+        )
+        self.assertEqual(200, response.status)
+        self.assertEqual(2, json.loads(raw)["result"]["total"])
+
+        response, raw = self.request(
+            "/v1/instrument/760e/stop",
+            method="POST",
+            payload={"job_id": "job-760e"},
+        )
+        self.assertEqual(200, response.status)
+        self.assertEqual("stopping", json.loads(raw)["run"]["state"])
+        self.assertEqual(["job-760e"], controller.statuses)
+        self.assertEqual([("job-760e", 0, 100)], controller.results)
+        self.assertEqual(["job-760e"], controller.stops)
+
+        status_response, status_raw = self.request("/v1/status")
+        status = json.loads(status_raw)
+        self.assertEqual(200, status_response.status)
+        self.assertEqual("chi760e_internal_dummy", status["safety"]["mode"])
+        self.assertTrue(status["safety"]["remote_stop_available"])
 
     def test_760d_dummy_run_requires_prepare_confirmations_and_local_approval(self) -> None:
         executable = Path(self.temporary.name) / "chi760d.exe"

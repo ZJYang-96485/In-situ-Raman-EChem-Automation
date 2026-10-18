@@ -42,9 +42,10 @@ persistent repository-local 32-bit 760E SDK worker, when that runtime is
 installed, and communicates over private stdin/stdout JSON pipes. The worker
 opens no network port. A local Windows approval is required before any SDK
 getter is called. The normal launcher exposes no experiment command. A
-separately gated worker commissioning mode now implements one bounded CV job
-contract, but it is not connected to the web bridge and is disabled unless the
-worker process is started with an explicit commissioning flag.
+separately gated worker commissioning mode implements one bounded CV job
+contract. The bridge can expose it through authenticated loopback endpoints,
+but only when both the bridge and worker processes are started with the
+explicit commissioning flag; the normal launcher omits that flag.
 
 The SDK capability check reports the model series compiled into `libec`, not a
 verified physical instrument identity. The supplied API has no serial-number or
@@ -81,10 +82,14 @@ Every start still requires the complete local safety confirmation set and a
 strict 760E-only CV plan: +/-0.25 V, 0.01-0.2 V/s, 0.001-0.01 V step, no more
 than 10 seconds quiet time, positive initial scan, and exactly two sweeps. The
 worker verifies every parameter readback, calls `CHI_Stop` during cleanup, and
-clears and verifies the `m_bCellOn` parameter. No current launcher or bridge
-enables this mode. The inspected CHI 760D desktop package contains no matching
-`libec760d.dll`; it cannot be selected through the 760E worker merely by
-renaming the executable or folder.
+clears and verifies the `m_bCellOn` parameter. The bridge provides separate
+prepare, start, status, stop, and paginated-result routes. Preparation validates
+the plan and reserves an immutable local run directory without calling the
+worker. Start requires all browser confirmations plus a separate Windows
+approval. Terminal status retrieves and saves the result locally without
+returning the storage path. No current launcher enables this mode. The inspected
+CHI 760D desktop package contains no matching `libec760d.dll`; it cannot be
+selected through the 760E worker merely by renaming the executable or folder.
 
 ## CHI 760D internal-dummy commissioning path
 
