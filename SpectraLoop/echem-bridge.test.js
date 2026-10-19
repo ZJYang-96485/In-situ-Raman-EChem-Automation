@@ -8,7 +8,7 @@ const { describeSnapshot } = require("./echem-bridge.js");
 test("electrochemistry page exposes bridge, storage, and identity controls", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
   const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-7");
-  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-10");
+  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-11");
 
   assert.match(html, /id="echem-bridge-summary"/);
   assert.match(html, /id="echem-bridge-check-status"/);
@@ -40,6 +40,22 @@ test("available function panels show names without implementation labels", () =>
   assert.doesNotMatch(protocolList, /<small>|badgeLabel|commissioning/);
   assert.match(setupList, /<strong>\$\{technique\}<\/strong>/);
   assert.match(protocolList, /<strong>\$\{definition\.label\}<\/strong>/);
+});
+
+test("repository data default is explained without revealing its full path", () => {
+  const view = describeSnapshot({
+    storage: {
+      configured: true,
+      available: true,
+      folder_name: "data",
+      source: "repository_default",
+    },
+    instrument: {},
+  });
+
+  assert.equal(view.storageLabel, "data");
+  assert.match(view.storageDetail, /repository data folder automatically/);
+  assert.doesNotMatch(view.storageDetail, /C:\\|\/Users\//);
 });
 
 test("760D desktop status enables only the explicit internal-dummy workflow", () => {

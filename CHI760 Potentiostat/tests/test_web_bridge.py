@@ -15,6 +15,7 @@ from chi760.web_bridge import (
     StorageSettings,
     UnavailableDiscoveryGateway,
     create_server,
+    default_repository_data_root,
 )
 from chi760.desktop_macro import CHI760DDesktopController
 
@@ -304,6 +305,10 @@ class WebBridgeTests(unittest.TestCase):
             self.error_payload(caught.exception)["error"]["code"],  # type: ignore[index]
         )
 
+    def test_default_data_root_is_repository_relative(self) -> None:
+        repository_root = Path(__file__).resolve().parents[2]
+        self.assertEqual(repository_root / "data", default_repository_data_root())
+
     def test_status_is_fail_closed_and_has_no_machine_path(self) -> None:
         response, raw = self.request("/v1/status")
         payload = json.loads(raw.decode("utf-8"))
@@ -428,6 +433,20 @@ class WebBridgeTests(unittest.TestCase):
 
         reloaded = StorageSettings(self.config_path)
         self.assertEqual(self.selected_folder.resolve(), reloaded.root)
+
+    def test_repository_data_folder_is_default_until_user_selects_an_override(self) -> None:
+        settings = StorageSettings(
+            Path(self.temporary.name) / "default-settings" / "bridge.json",
+            default_root=self.selected_folder,
+        )
+        self.assertEqual(self.selected_folder.resolve(), settings.root)
+        self.assertEqual("repository_default", settings.public_status()["source"])
+
+        override = Path(self.temporary.name) / "custom-data"
+        override.mkdir()
+        settings.configure(override)
+        self.assertEqual(override.resolve(), settings.root)
+        self.assertEqual("selected", settings.public_status()["source"])
 
     def test_ec_only_simulation_is_saved_by_date_task_and_trial(self) -> None:
         with self.assertRaises(HTTPError) as caught:
@@ -567,7 +586,7 @@ class WebBridgeTests(unittest.TestCase):
         text = launcher.read_text(encoding="utf-8")
 
         self.assertNotIn("--enable-chi760e-commissioning", text)
-        self.assertIn("app=spectraloop-20261019-1", text)
+        self.assertIn("app=spectraloop-20261019-2", text)
 
     def test_760e_prepare_start_status_stop_and_result_are_separately_gated(self) -> None:
         controller = Fake760ECommissioningController()

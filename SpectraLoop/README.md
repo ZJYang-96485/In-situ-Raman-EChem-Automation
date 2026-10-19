@@ -54,6 +54,9 @@ dependency-free Python bridge on `127.0.0.1:8765` and opens
 token. The page can then open the normal
 Windows folder picker and persist the chosen data root in the current user's
 local application settings. Users do not need to open VS Code or type a path.
+When no custom folder has been selected, the bridge automatically uses the
+repository-level `data/` directory; a saved folder selection remains an
+explicit override.
 Successful browser simulations are saved automatically under
 `simulations/YYYY-MM-DD/task name/trial-NNN`; the page shows this relative
 folder after saving and provides an **Open saved folder** button for Windows

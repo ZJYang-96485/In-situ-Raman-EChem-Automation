@@ -60,7 +60,7 @@ from .worker_transport import (
 )
 
 
-BRIDGE_VERSION = "0.6.0"
+BRIDGE_VERSION = "0.7.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -350,14 +350,29 @@ def default_config_path() -> Path:
     return Path.home() / ".config" / "spectraloop" / "bridge.json"
 
 
+def default_repository_data_root() -> Path:
+    """Resolve the project data folder without embedding a machine path."""
+
+    return Path(__file__).resolve().parents[2] / "data"
+
+
 class StorageSettings:
     """Persist the user-selected data root locally and reveal only its label."""
 
-    def __init__(self, config_path: str | Path) -> None:
+    def __init__(
+        self,
+        config_path: str | Path,
+        *,
+        default_root: str | Path | None = None,
+    ) -> None:
         self.config_path = Path(config_path)
+        self.default_root = Path(default_root) if default_root is not None else None
         self._root: Path | None = None
         self._load_error: str | None = None
+        self._source = "none"
         self._load()
+        if self._root is None and self._load_error is None:
+            self._load_default()
 
     @property
     def root(self) -> Path | None:
@@ -369,6 +384,7 @@ class StorageSettings:
             "configured": self._root is not None,
             "available": available,
             "folder_name": self._root.name if self._root is not None else None,
+            "source": self._source,
             "load_error": self._load_error,
         }
 
@@ -415,6 +431,7 @@ class StorageSettings:
             if temporary.exists():
                 temporary.unlink()
         self._root = resolved
+        self._source = "selected"
         self._load_error = None
 
     def _load(self) -> None:
@@ -429,9 +446,22 @@ class StorageSettings:
             if not candidate.is_absolute():
                 raise ValueError("storage_root is not absolute")
             self._root = candidate.resolve(strict=False)
+            self._source = "saved"
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
             self._root = None
+            self._source = "none"
             self._load_error = f"Stored folder setting could not be loaded: {error}"
+
+    def _load_default(self) -> None:
+        if self.default_root is None:
+            return
+        try:
+            candidate = self.default_root.expanduser().resolve(strict=True)
+        except OSError:
+            return
+        if candidate.is_dir():
+            self._root = candidate
+            self._source = "repository_default"
 
 
 @dataclass
@@ -1368,6 +1398,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--site-dir", type=Path)
     parser.add_argument("--config", type=Path, default=default_config_path())
     parser.add_argument(
+        "--default-storage-root",
+        type=Path,
+        default=default_repository_data_root(),
+        help=(
+            "Data folder used when no saved folder selection exists; defaults "
+            "to the repository-level data directory."
+        ),
+    )
+    parser.add_argument(
         "--start-page",
         choices=("setup", "echem"),
         default="setup",
@@ -1456,9 +1495,16 @@ def main(argv: list[str] | None = None) -> int:
     commissioning_760e = (
         gateway if isinstance(gateway, SDKWorkerCommissioningGateway) else None
     )
+    try:
+        args.default_storage_root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     state = BridgeState(
         token=token,
-        storage=StorageSettings(args.config),
+        storage=StorageSettings(
+            args.config,
+            default_root=args.default_storage_root,
+        ),
         gateway=gateway,
         commissioning_760e=commissioning_760e,
         desktop_760d=CHI760DDesktopController(

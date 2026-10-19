@@ -48,7 +48,9 @@
         ? `${storage.folder_name || "Selected folder"}${storage.available ? "" : " (unavailable)"}`
         : "Not selected",
       storageDetail: storage.configured && storage.available
-        ? "The full path remains inside the local bridge."
+        ? storage.source === "repository_default"
+          ? "Using the repository data folder automatically. The full path remains inside the local bridge."
+          : "The full path remains inside the local bridge."
         : storage.configured
           ? "Choose an available folder before recording data."
           : "Choose a folder using the normal Windows folder picker.",
