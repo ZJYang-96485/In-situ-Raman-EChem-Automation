@@ -171,7 +171,7 @@ test("electrochemistry page loads the cache-busted simulator before its runner",
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
   const runner = fs.readFileSync(path.join(__dirname, "echem.js"), "utf8");
   const simulatorAsset = "simulator.js?v=echem-simulator-4";
-  const runnerAsset = "echem.js?v=echem-simulator-4";
+  const runnerAsset = "echem.js?v=echem-simulator-5";
 
   assert.ok(html.indexOf(simulatorAsset) >= 0);
   assert.ok(html.indexOf(simulatorAsset) < html.indexOf(runnerAsset));
@@ -223,6 +223,10 @@ test("successful browser simulation is saved and shows its relative folder", asy
   const button = { disabled: false, textContent: "Run simulation", addEventListener() {} };
   const builderStatus = { textContent: "" };
   const sessionStatus = { textContent: "" };
+  const storageResult = { textContent: "" };
+  const storageDetail = { textContent: "" };
+  const openButton = { disabled: true, textContent: "Open saved folder", addEventListener() {} };
+  const receipt = { classList: { toggle() {} } };
   const inertElement = { addEventListener() {} };
   const session = {
     electrochemistry: [{ elapsed_s: 0 }],
@@ -233,10 +237,15 @@ test("successful browser simulation is saved and shows its relative folder", asy
   };
   let loadedSession = null;
   let savedSession = null;
+  let openedFolder = null;
   const elements = new Map([
     ["#run-simulation", button],
     ["#simulation-builder-status", builderStatus],
     ["#simulation-session-status", sessionStatus],
+    [".simulation-storage-receipt", receipt],
+    ["#simulation-storage-result", storageResult],
+    ["#simulation-storage-detail", storageDetail],
+    ["#open-simulation-folder", openButton],
     ["#simulation-scenario", { value: "standard" }],
     ["#protocol-view", inertElement],
   ]);
@@ -265,7 +274,10 @@ test("successful browser simulation is saved and shows its relative folder", asy
         return {
           async saveSimulation(value) {
             savedSession = value;
-            return { simulation: { folder: "simulations/2026-10-18/EChem test/trial-001" } };
+            return { simulation: { folder: "simulations/2026-10-19/EChem test/trial-001" } };
+          },
+          async openSimulationFolder(folder) {
+            openedFolder = folder;
           },
         };
       },
@@ -279,8 +291,13 @@ test("successful browser simulation is saved and shows its relative folder", asy
 
   assert.equal(loadedSession, session);
   assert.equal(savedSession, session);
-  assert.match(builderStatus.textContent, /saved in simulations\/2026-10-18\/EChem test\/trial-001/);
-  assert.equal(sessionStatus.textContent, "Saved in simulations/2026-10-18/EChem test/trial-001");
+  assert.match(builderStatus.textContent, /saved in simulations\/2026-10-19\/EChem test\/trial-001/);
+  assert.equal(sessionStatus.textContent, "Saved in simulations/2026-10-19/EChem test/trial-001");
+  assert.equal(storageResult.textContent, "simulations/2026-10-19/EChem test/trial-001");
+  assert.equal(openButton.disabled, false);
+  await context.SpectraLoopEchemCore.openSavedSimulationFolder();
+  assert.equal(openedFolder, "simulations/2026-10-19/EChem test/trial-001");
+  assert.equal(storageDetail.textContent, "Opened this trial in Windows File Explorer.");
   assert.equal(button.disabled, false);
   assert.equal(button.textContent, "Run simulation");
 });

@@ -240,11 +240,13 @@ class WebBridgeTests(unittest.TestCase):
             "<!doctype html><title>SpectraLoop test</title>", encoding="utf-8"
         )
         self.config_path = root / "settings" / "bridge.json"
+        self.opened_folders: list[Path] = []
         self.state = BridgeState(
             token="test-secret-token",
             storage=StorageSettings(self.config_path),
             gateway=UnavailableDiscoveryGateway("test adapter unavailable"),
             directory_picker=lambda _initial: self.selected_folder,
+            folder_opener=self.opened_folders.append,
             discovery_approval=lambda: True,
         )
         self.server = create_server(
@@ -462,6 +464,28 @@ class WebBridgeTests(unittest.TestCase):
         self.assertNotIn(str(self.selected_folder), first_raw.decode("utf-8"))
         self.assertFalse((self.selected_folder / "runs").exists())
 
+        open_response, open_raw = self.request(
+            "/v1/simulations/open-folder",
+            method="POST",
+            payload={"folder": first["folder"]},
+        )
+        self.assertEqual(200, open_response.status)
+        self.assertEqual(
+            (self.selected_folder / Path(first["folder"])).resolve(),
+            self.opened_folders[0],
+        )
+        self.assertNotIn(str(self.selected_folder), open_raw.decode("utf-8"))
+
+        with self.assertRaises(HTTPError) as caught:
+            self.request(
+                "/v1/simulations/open-folder",
+                method="POST",
+                payload={"folder": "simulations/../runs/trial-001"},
+            )
+        self.assertEqual(400, caught.exception.code)
+        caught.exception.close()
+        self.assertEqual(1, len(self.opened_folders))
+
     def test_simulation_save_rejects_hardware_or_raman_data(self) -> None:
         self.state.storage.configure(self.selected_folder)
         for field, value in (("hardware_connected", True), ("raman", [{"frame_id": "R001"}])):
@@ -543,7 +567,7 @@ class WebBridgeTests(unittest.TestCase):
         text = launcher.read_text(encoding="utf-8")
 
         self.assertNotIn("--enable-chi760e-commissioning", text)
-        self.assertIn("app=spectraloop-20261018-4", text)
+        self.assertIn("app=spectraloop-20261019-1", text)
 
     def test_760e_prepare_start_status_stop_and_result_are_separately_gated(self) -> None:
         controller = Fake760ECommissioningController()

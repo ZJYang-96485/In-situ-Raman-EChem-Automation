@@ -7,7 +7,7 @@
     <title>SpectraLoop — Electrochemistry</title>
     <meta name="theme-color" content="#061b3b" />
     <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
-    <link rel="stylesheet" href="styles.css?v=echem-ec-only-1" />
+    <link rel="stylesheet" href="styles.css?v=echem-ec-only-2" />
   </head>
   <body>
     <main class="shell wide-shell">
@@ -294,6 +294,16 @@
           </div>
         </div>
 
+        <section class="simulation-storage-receipt not-saved" aria-labelledby="simulation-storage-heading">
+          <div>
+            <p class="eyebrow">DATA STORAGE</p>
+            <h2 id="simulation-storage-heading">Saved simulation folder</h2>
+            <strong id="simulation-storage-result">No simulation has been saved in this session.</strong>
+            <p id="simulation-storage-detail">Connect the local bridge and choose a storage folder before running the simulation.</p>
+          </div>
+          <button id="open-simulation-folder" class="button secondary" type="button" disabled>Open saved folder</button>
+        </section>
+
         <div class="synchronized-plots" aria-label="Electrochemistry plot">
           <section class="timeline-panel" aria-labelledby="timeline-title">
             <div class="workspace-heading"><div><p class="eyebrow">ELECTROCHEMISTRY</p><h2 id="timeline-title">Potential and current</h2></div><span class="count-chip">Shared time</span></div>
@@ -312,12 +322,12 @@
         <a href="setup.html">Experiment setup →</a>
       </footer>
     </main>
-    <script src="bridge-client.js?v=echem-bridge-6"></script>
-    <script src="echem-bridge.js?v=echem-bridge-9"></script>
+    <script src="bridge-client.js?v=echem-bridge-7"></script>
+    <script src="echem-bridge.js?v=echem-bridge-10"></script>
     <script src="protocols.js?v=echem-models-4"></script>
     <script src="smoke-test.js?v=echem-simulator-2"></script>
     <script src="simulator.js?v=echem-simulator-4"></script>
     <script src="monitor.js?v=echem-ec-only-1"></script>
-    <script src="echem.js?v=echem-simulator-4"></script>
+    <script src="echem.js?v=echem-simulator-5"></script>
   </body>
 </html>

@@ -119,7 +119,7 @@ test("760D methods use the fixed authenticated loopback API", async () => {
   });
 });
 
-test("simulation save uses the authenticated loopback storage endpoint", async () => {
+test("simulation storage uses only authenticated loopback endpoints", async () => {
   const requests = [];
   const client = new BridgeClient({
     token: "A_secure_test_token_123456789",
@@ -131,7 +131,12 @@ test("simulation save uses the authenticated loopback storage endpoint", async (
   const session = { execution_mode: "connection_free_simulation", hardware_calls: 0 };
 
   await client.saveSimulation(session);
+  await client.openSimulationFolder("simulations/2026-10-19/EChem test/trial-001");
 
   assert.equal(requests[0].url, "http://127.0.0.1:8765/v1/simulations/save");
   assert.deepEqual(JSON.parse(requests[0].options.body), { session });
+  assert.equal(requests[1].url, "http://127.0.0.1:8765/v1/simulations/open-folder");
+  assert.deepEqual(JSON.parse(requests[1].options.body), {
+    folder: "simulations/2026-10-19/EChem test/trial-001",
+  });
 });

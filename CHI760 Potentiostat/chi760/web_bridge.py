@@ -26,8 +26,10 @@ import math
 import mimetypes
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 import secrets
+import subprocess
 import threading
 from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import unquote, urlsplit, urlunsplit
@@ -58,7 +60,7 @@ from .worker_transport import (
 )
 
 
-BRIDGE_VERSION = "0.5.0"
+BRIDGE_VERSION = "0.6.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -179,6 +181,7 @@ class CHI760EDiscoveryGateway:
 
 
 DirectoryPicker = Callable[[Path | None], Path | None]
+FolderOpener = Callable[[Path], None]
 ApprovalPrompt = Callable[[], bool]
 ExperimentApprovalPrompt = Callable[[Mapping[str, Any]], bool]
 
@@ -209,6 +212,29 @@ def native_directory_picker(initial: Path | None = None) -> Path | None:
     finally:
         root.destroy()
     return Path(selected) if selected else None
+
+
+def native_folder_opener(directory: Path) -> None:
+    """Open one validated saved folder after an explicit browser click."""
+
+    if os.name != "nt":  # pragma: no cover - the production bridge is Windows-only
+        raise BridgeRequestError(
+            "folder_open_unavailable",
+            "Opening the saved folder is available on the Windows instrument computer.",
+            503,
+        )
+    try:
+        subprocess.Popen(
+            ["explorer.exe", str(directory)],
+            shell=False,
+            close_fds=True,
+        )
+    except OSError as error:
+        raise BridgeRequestError(
+            "folder_open_failed",
+            "Windows could not open the saved simulation folder.",
+            500,
+        ) from error
 
 
 def native_discovery_approval() -> bool:
@@ -414,6 +440,7 @@ class BridgeState:
     storage: StorageSettings
     gateway: DiscoveryGateway
     directory_picker: DirectoryPicker = native_directory_picker
+    folder_opener: FolderOpener = native_folder_opener
     discovery_approval: ApprovalPrompt = native_discovery_approval
     desktop_760d: CHI760DDesktopController | None = None
     experiment_approval: ExperimentApprovalPrompt = native_760d_experiment_approval
@@ -797,6 +824,51 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                     )
                 saved = _save_simulation_session(storage_root, payload.get("session"))
                 self._json_response(HTTPStatus.OK, {"simulation": saved})
+                return
+            if route == "/v1/simulations/open-folder":
+                storage_root = self.server.bridge_state.storage.root
+                if storage_root is None or not storage_root.is_dir():
+                    raise BridgeRequestError(
+                        "storage_required", "Choose an available storage folder first."
+                    )
+                relative_value = payload.get("folder")
+                if not isinstance(relative_value, str) or len(relative_value) > 500:
+                    raise BridgeRequestError(
+                        "invalid_simulation_folder",
+                        "A saved simulation folder is required.",
+                    )
+                relative = PurePosixPath(relative_value)
+                if (
+                    relative.is_absolute()
+                    or not relative.parts
+                    or relative.parts[0] != "simulations"
+                    or any(part in {"", ".", ".."} for part in relative.parts)
+                ):
+                    raise BridgeRequestError(
+                        "invalid_simulation_folder",
+                        "The requested folder must be a saved simulation trial.",
+                    )
+                try:
+                    destination = storage_root.joinpath(*relative.parts).resolve(
+                        strict=True
+                    )
+                    destination.relative_to(storage_root.resolve(strict=True))
+                except (OSError, ValueError) as error:
+                    raise BridgeRequestError(
+                        "simulation_folder_unavailable",
+                        "The saved simulation folder is no longer available.",
+                        404,
+                    ) from error
+                if not destination.is_dir() or not destination.name.startswith("trial-"):
+                    raise BridgeRequestError(
+                        "invalid_simulation_folder",
+                        "The requested folder is not a saved simulation trial.",
+                    )
+                self.server.bridge_state.folder_opener(destination)
+                self._json_response(
+                    HTTPStatus.OK,
+                    {"simulation": {"opened": True, "folder": relative_value}},
+                )
                 return
             if route == "/v1/instrument/760e/prepare":
                 controller_760e = self.server.bridge_state.commissioning_760e

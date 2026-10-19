@@ -122,6 +122,13 @@
       });
     }
 
+    openSimulationFolder(folder) {
+      return this.request("/v1/simulations/open-folder", {
+        method: "POST",
+        body: { folder },
+      });
+    }
+
     discoverInstrument(confirmations) {
       return this.request("/v1/instrument/discover", {
         method: "POST",

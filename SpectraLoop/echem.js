@@ -1,6 +1,19 @@
 const echemViews = [...document.querySelectorAll("[data-echem-view]")];
 const echemSwitches = [...document.querySelectorAll("[data-view-target]")];
 let simulatorRecoveryPromise = null;
+let lastSavedSimulationFolder = null;
+
+function showSimulationStorageResult({ folder = null, detail }) {
+  const receipt = document.querySelector(".simulation-storage-receipt");
+  const result = document.querySelector("#simulation-storage-result");
+  const detailElement = document.querySelector("#simulation-storage-detail");
+  const openButton = document.querySelector("#open-simulation-folder");
+  lastSavedSimulationFolder = folder;
+  receipt.classList.toggle("not-saved", !folder);
+  result.textContent = folder || "Simulation was not saved.";
+  detailElement.textContent = detail;
+  openButton.disabled = !folder;
+}
 
 function ensureSimulationCore() {
   const existing = globalThis.SpectraLoopSimulatorCore;
@@ -71,14 +84,20 @@ async function runConnectionFreeSimulation() {
     if (!bridgeClient) {
       status.textContent = `${session.electrochemistry.length} EChem points generated · 0 hardware calls · not saved: check the local bridge and choose a storage folder.`;
       document.querySelector("#simulation-session-status").textContent = "Not saved · check the local bridge and choose a storage folder";
+      showSimulationStorageResult({ detail: "Check the local bridge and choose a storage folder, then run again." });
     } else {
       try {
         const result = await bridgeClient.saveSimulation(session);
         status.textContent = `${session.electrochemistry.length} EChem points generated · saved in ${result.simulation.folder}.`;
         document.querySelector("#simulation-session-status").textContent = `Saved in ${result.simulation.folder}`;
+        showSimulationStorageResult({
+          folder: result.simulation.folder,
+          detail: "This path is inside the storage folder selected in the Local CHI Connection panel.",
+        });
       } catch (saveError) {
         status.textContent = `${session.electrochemistry.length} EChem points generated · simulation complete but not saved: ${saveError instanceof Error ? saveError.message : String(saveError)}`;
         document.querySelector("#simulation-session-status").textContent = `Not saved · ${saveError instanceof Error ? saveError.message : String(saveError)}`;
+        showSimulationStorageResult({ detail: saveError instanceof Error ? saveError.message : String(saveError) });
       }
     }
   } catch (error) {
@@ -86,6 +105,28 @@ async function runConnectionFreeSimulation() {
   } finally {
     button.disabled = false;
     button.textContent = "Run simulation";
+  }
+}
+
+async function openSavedSimulationFolder() {
+  if (!lastSavedSimulationFolder) return;
+  const button = document.querySelector("#open-simulation-folder");
+  const detail = document.querySelector("#simulation-storage-detail");
+  const client = globalThis.SpectraLoopEchemBridgeCore?.getClient?.();
+  if (!client) {
+    detail.textContent = "The local bridge is not connected; start it and try again.";
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Opening…";
+  try {
+    await client.openSimulationFolder(lastSavedSimulationFolder);
+    detail.textContent = "Opened this trial in Windows File Explorer.";
+  } catch (error) {
+    detail.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Open saved folder";
   }
 }
 
@@ -114,6 +155,7 @@ echemSwitches.forEach((button) => {
 showEchemView(new URLSearchParams(window.location.search).get("view"), false);
 
 document.querySelector("#run-simulation").addEventListener("click", runConnectionFreeSimulation);
+document.querySelector("#open-simulation-folder").addEventListener("click", openSavedSimulationFolder);
 document.querySelector("#protocol-view").addEventListener("input", (event) => {
   if (!event.target.closest("#offline-checks")) markSimulationStale();
 });
@@ -127,6 +169,7 @@ document.querySelector("#protocol-view").addEventListener("click", (event) => {
 globalThis.SpectraLoopEchemCore = {
   ensureSimulationCore,
   markSimulationStale,
+  openSavedSimulationFolder,
   runConnectionFreeSimulation,
   showEchemView,
 };

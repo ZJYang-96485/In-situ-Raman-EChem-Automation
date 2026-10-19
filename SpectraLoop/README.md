@@ -56,8 +56,9 @@ Windows folder picker and persist the chosen data root in the current user's
 local application settings. Users do not need to open VS Code or type a path.
 Successful browser simulations are saved automatically under
 `simulations/YYYY-MM-DD/task name/trial-NNN`; the page shows this relative
-folder after saving. Simulation records remain separate from real instrument
-runs under `runs/`.
+folder after saving and provides an **Open saved folder** button for Windows
+File Explorer. Simulation records remain separate from real instrument runs
+under `runs/`.
 Until the updated public site has been deployed, double-click
 `Start SpectraLoop Local.cmd` instead; it opens the same bundled interface from
 the loopback service and requires no internet connection.
