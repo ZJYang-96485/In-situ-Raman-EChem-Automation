@@ -136,6 +136,41 @@
       });
     }
 
+    prepare760EDummyCV(plan, taskName) {
+      return this.request("/v1/instrument/760e/prepare", {
+        method: "POST",
+        body: { plan, task_name: taskName },
+      });
+    }
+
+    start760EDummyCV(preparationToken, confirmations) {
+      return this.request("/v1/instrument/760e/start", {
+        method: "POST",
+        body: { preparation_token: preparationToken, confirmations },
+      });
+    }
+
+    status760EDummyCV(jobId) {
+      return this.request("/v1/instrument/760e/status", {
+        method: "POST",
+        body: { job_id: jobId },
+      });
+    }
+
+    stop760EDummyCV(jobId) {
+      return this.request("/v1/instrument/760e/stop", {
+        method: "POST",
+        body: { job_id: jobId },
+      });
+    }
+
+    result760EDummyCV(jobId, offset = 0, limit = 4096) {
+      return this.request("/v1/instrument/760e/result", {
+        method: "POST",
+        body: { job_id: jobId, offset, limit },
+      });
+    }
+
     prepare760DDummyCV(protocol) {
       return this.request("/v1/instrument/760d/prepare", {
         method: "POST",

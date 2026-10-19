@@ -119,6 +119,46 @@ test("760D methods use the fixed authenticated loopback API", async () => {
   });
 });
 
+test("760E controls use only the fixed authenticated loopback API", async () => {
+  const requests = [];
+  const client = new BridgeClient({
+    token: "A_secure_test_token_123456789",
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    },
+  });
+  const plan = { target_model: "760E", initial_potential_v: 0 };
+  const confirmations = { target_is_760e: true };
+
+  await client.prepare760EDummyCV(plan, "First 760E CV");
+  await client.start760EDummyCV("prepared-token", confirmations);
+  await client.status760EDummyCV("job-760e");
+  await client.stop760EDummyCV("job-760e");
+  await client.result760EDummyCV("job-760e", 10, 20);
+
+  assert.deepEqual(requests.map((request) => request.url), [
+    "http://127.0.0.1:8765/v1/instrument/760e/prepare",
+    "http://127.0.0.1:8765/v1/instrument/760e/start",
+    "http://127.0.0.1:8765/v1/instrument/760e/status",
+    "http://127.0.0.1:8765/v1/instrument/760e/stop",
+    "http://127.0.0.1:8765/v1/instrument/760e/result",
+  ]);
+  assert.deepEqual(JSON.parse(requests[0].options.body), {
+    plan,
+    task_name: "First 760E CV",
+  });
+  assert.deepEqual(JSON.parse(requests[1].options.body), {
+    preparation_token: "prepared-token",
+    confirmations,
+  });
+  assert.deepEqual(JSON.parse(requests[4].options.body), {
+    job_id: "job-760e",
+    offset: 10,
+    limit: 20,
+  });
+});
+
 test("simulation storage uses only authenticated loopback endpoints", async () => {
   const requests = [];
   const client = new BridgeClient({

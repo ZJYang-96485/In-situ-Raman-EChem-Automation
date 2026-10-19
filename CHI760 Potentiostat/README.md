@@ -41,11 +41,11 @@ and restricts browser origins. On Windows the normal launcher starts a
 persistent repository-local 32-bit 760E SDK worker, when that runtime is
 installed, and communicates over private stdin/stdout JSON pipes. The worker
 opens no network port. A local Windows approval is required before any SDK
-getter is called. The normal launcher exposes no experiment command. A
-separately gated worker commissioning mode implements one bounded CV job
-contract. The bridge can expose it through authenticated loopback endpoints,
-but only when both the bridge and worker processes are started with the
-explicit commissioning flag; the normal launcher omits that flag.
+getter is called. A separately gated worker commissioning mode implements one
+bounded CV job contract. The normal 760E launcher now supplies that explicit
+flag and exposes the workflow through authenticated loopback endpoints; start
+still requires the full browser confirmation set and a separate local Windows
+approval.
 
 The SDK capability check reports the model series compiled into `libec`, not a
 verified physical instrument identity. The supplied API has no serial-number or
@@ -87,7 +87,8 @@ prepare, start, status, stop, and paginated-result routes. Preparation validates
 the plan and reserves an immutable local run directory without calling the
 worker. Start requires all browser confirmations plus a separate Windows
 approval. Terminal status retrieves and saves the result locally without
-returning the storage path. No current launcher enables this mode. The inspected
+returning the storage path. `Start SpectraLoop.cmd` enables this 760E mode; the
+public page displays its controls only for the selected 760E model. The inspected
 CHI 760D desktop package contains no matching `libec760d.dll`; it cannot be
 selected through the 760E worker merely by renaming the executable or folder.
 

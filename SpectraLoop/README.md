@@ -75,15 +75,19 @@ The bridge:
   from the visible URL after loading;
 - returns only the chosen folder's name to the web page, keeping the full path
   inside the local service;
-- exposes no experiment endpoint and reports experiment control disabled;
+- exposes the bounded 760E commissioning endpoints only when the launcher uses
+  the explicit commissioning flag;
 - requires four web confirmations plus a separate Windows confirmation before
-  any future identity query.
+  an identity query.
 
-The current CHI adapter status is intentionally `adapter_unavailable`, because
-the installed CHI 760E package does not document a non-energizing identity API.
-Consequently the bridge makes zero CHI hardware calls today. A matching,
-verified discovery transport can later be injected through
-`CHI760EDiscoveryGateway` without changing the browser or storage workflow.
+The normal launcher on the 760E instrument computer now opts into one real,
+bounded internal-dummy CV workflow. The page accepts only one one-cycle CV,
+requires the bench to be marked available, keeps potentials within +/-0.25 V,
+and requires seven browser confirmations plus a separate Windows approval
+immediately before start. The local worker verifies SDK parameter readback,
+provides a documented Stop route, requests cell-off cleanup, and saves results
+under `runs/YYYY-MM-DD/task name/trial-NNN`. Every other experiment remains
+locked.
 
 For command-line development without the deployed site, start the bridge from
 the `CHI760 Potentiostat` directory without `--web-url`; it serves and opens

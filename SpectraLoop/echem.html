@@ -67,8 +67,46 @@
           </div>
         </details>
         <aside class="safety-callout bridge-lock-note">
-          <strong>Protocol execution is still locked.</strong>
-          Connecting the bridge or checking SDK capabilities does not authorize OCP, EIS, CV, iR compensation, cell control, Raman, RDE, or any other experiment.
+          <strong id="echem-execution-lock-title">Protocol execution is still locked.</strong>
+          <span id="echem-execution-lock-detail">Connecting the bridge or checking SDK capabilities does not authorize OCP, EIS, CV, iR compensation, cell control, Raman, RDE, or any other experiment.</span>
+        </aside>
+      </section>
+
+      <section class="bridge-panel echem-bridge-panel" id="chi760e-runner-panel" aria-labelledby="chi760e-runner-heading" hidden>
+        <div class="bridge-heading">
+          <div>
+            <p class="eyebrow">CHI 760E SDK CONTROL</p>
+            <h2 id="chi760e-runner-heading">Bounded internal dummy-cell CV</h2>
+            <p class="card-note">One two-sweep CV, within +/-0.25 V, using the current single-CV protocol. Results are saved in the local data folder.</p>
+          </div>
+          <strong id="chi760e-runner-state"><span class="status-dot amber"></span>Not checked</strong>
+        </div>
+        <p id="chi760e-runner-detail" class="bridge-check-status" role="status" aria-live="polite">Start the 760E control bridge to inspect readiness.</p>
+        <details class="bridge-discovery-details" id="chi760e-runner-details">
+          <summary>Review and authorize the real internal-dummy CV</summary>
+          <p class="card-note">Select CHI 760E, mark the bench available, build exactly one one-cycle CV, and disable iR compensation. Preparing validates the plan and reserves a unique run folder; it does not contact the instrument.</p>
+          <fieldset class="identity-confirmations" id="chi760e-run-confirmations" disabled>
+            <legend>Confirm immediately before starting</legend>
+            <label><input type="checkbox" data-chi760e-confirmation="target_is_760e" /> The connected instrument and installed SDK are for CHI 760E.</label>
+            <label><input type="checkbox" data-chi760e-confirmation="no_other_chi_measurement_running" /> No other CHI measurement is running.</label>
+            <label><input type="checkbox" data-chi760e-confirmation="chi_desktop_closed" /> The CHI desktop application is closed.</label>
+            <label><input type="checkbox" data-chi760e-confirmation="internal_dummy_cell_connected" /> The CHI internal dummy cell is selected and connected.</label>
+            <label><input type="checkbox" data-chi760e-confirmation="external_sample_disconnected" /> Every external sample is disconnected.</label>
+            <label><input type="checkbox" data-chi760e-confirmation="electrode_leads_verified" /> Electrode leads are verified for the internal dummy-cell setup.</label>
+            <label><input type="checkbox" data-chi760e-confirmation="cell_output_confirmed_off" /> CHI cell output is currently off.</label>
+          </fieldset>
+          <div class="bridge-actions">
+            <div class="button-row">
+              <button class="button secondary" id="chi760e-prepare-run" type="button" disabled>Prepare bounded CV</button>
+              <button class="button primary" id="chi760e-start-run" type="button" disabled>Start approved CV</button>
+              <button class="button ghost" id="chi760e-stop-run" type="button" disabled>Stop CV</button>
+            </div>
+            <p id="chi760e-run-action-status" class="card-note" role="status" aria-live="polite">No 760E CV has been prepared.</p>
+          </div>
+        </details>
+        <aside class="safety-callout bridge-lock-note">
+          <strong>Real hardware control is limited to this commissioning CV.</strong>
+          Starting still requires a separate approval in a local Windows dialog. Stop is sent through the documented CHI SDK, and cleanup requests cell off even after an error.
         </aside>
       </section>
 
@@ -156,6 +194,7 @@
                   <option value="chi760b-cv">760B CV plan</option>
                   <option value="chi760b-it">760B amperometric i-t plan</option>
                   <option value="chi760d-dummy">760D internal dummy CV</option>
+                  <option value="chi760e-dummy">760E bounded internal dummy CV</option>
                   <option value="ocp-eis-cv">OCP → EIS → CV</option>
                   <option value="ca-forward-backward">OCP/EIS + forward/backward CA</option>
                   <option value="orr-lsv">ORR OCP → LSV</option>
@@ -318,13 +357,13 @@
       </section>
 
       <footer class="page-footer">
-        <span>Planning and simulation only · live CHI control remains locked</span>
+        <span>Planning, simulation, and explicitly gated local CHI control</span>
         <a href="setup.html">Experiment setup →</a>
       </footer>
     </main>
-    <script src="bridge-client.js?v=echem-bridge-7"></script>
-    <script src="echem-bridge.js?v=echem-bridge-11"></script>
-    <script src="protocols.js?v=echem-models-4"></script>
+    <script src="bridge-client.js?v=echem-bridge-8"></script>
+    <script src="echem-bridge.js?v=echem-bridge-12"></script>
+    <script src="protocols.js?v=echem-models-5"></script>
     <script src="smoke-test.js?v=echem-simulator-2"></script>
     <script src="simulator.js?v=echem-simulator-4"></script>
     <script src="monitor.js?v=echem-ec-only-1"></script>

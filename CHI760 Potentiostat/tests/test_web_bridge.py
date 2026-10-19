@@ -581,12 +581,12 @@ class WebBridgeTests(unittest.TestCase):
             self.error_payload(caught.exception)["error"]["code"],  # type: ignore[index]
         )
 
-    def test_normal_launcher_does_not_enable_760e_commissioning(self) -> None:
+    def test_normal_launcher_explicitly_enables_bounded_760e_commissioning(self) -> None:
         launcher = Path(__file__).resolve().parents[2] / "Start SpectraLoop.cmd"
         text = launcher.read_text(encoding="utf-8")
 
-        self.assertNotIn("--enable-chi760e-commissioning", text)
-        self.assertIn("app=spectraloop-20261019-2", text)
+        self.assertEqual(2, text.count("--enable-chi760e-commissioning"))
+        self.assertIn("app=spectraloop-20261019-3", text)
 
     def test_760e_prepare_start_status_stop_and_result_are_separately_gated(self) -> None:
         controller = Fake760ECommissioningController()

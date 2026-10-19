@@ -60,7 +60,7 @@ from .worker_transport import (
 )
 
 
-BRIDGE_VERSION = "0.7.0"
+BRIDGE_VERSION = "0.8.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765

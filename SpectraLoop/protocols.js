@@ -230,6 +230,25 @@ const presets = {
       },
     }],
   },
+  "chi760e-dummy": {
+    name: "760E bounded internal dummy CV",
+    allowedModels: ["760E"],
+    ramanSync: "none",
+    irEnabled: false,
+    steps: [{
+      kind: "cv",
+      name: "Bounded internal dummy CV",
+      values: {
+        initial_voltage_v: 0,
+        apex1_voltage_v: 0.1,
+        apex2_voltage_v: -0.1,
+        final_voltage_v: 0,
+        scan_rate_v_s: 0.1,
+        step_size_v: 0.002,
+        cycles: 1,
+      },
+    }],
+  },
   levich: {
     name: "Levich CA RPM sweep",
     allowedModels: ["760E"],
