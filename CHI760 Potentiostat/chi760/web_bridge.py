@@ -60,7 +60,7 @@ from .worker_transport import (
 )
 
 
-BRIDGE_VERSION = "0.10.0"
+BRIDGE_VERSION = "0.11.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -97,17 +97,7 @@ REQUIRED_760E_RUN_CONFIRMATIONS = frozenset(
         "cell_output_confirmed_off",
     }
 )
-REQUIRED_760B_RUN_CONFIRMATIONS = frozenset(
-    {
-        "target_is_760b",
-        "no_other_chi_measurement_running",
-        "chi_desktop_closed",
-        "internal_dummy_cell_connected",
-        "external_sample_disconnected",
-        "electrode_leads_verified",
-        "cell_output_confirmed_off",
-    }
-)
+REQUIRED_760B_RUN_CONFIRMATIONS = frozenset()
 
 
 def _required_sdk_run_confirmations(target_model: str) -> frozenset[str]:
@@ -1011,7 +1001,9 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 if action == "start":
-                    confirmations = payload.get("confirmations")
+                    confirmations = (
+                        {} if target_model == "760B" else payload.get("confirmations")
+                    )
                     if not isinstance(confirmations, Mapping):
                         raise BridgeRequestError(
                             "confirmations_required",

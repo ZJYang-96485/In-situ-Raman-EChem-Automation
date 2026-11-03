@@ -142,6 +142,18 @@ CV_COMMISSIONING_PLAN_FIELDS = (
     "quiet_time_s",
     "sweep_segments",
 )
+DIRECT_CV_PLAN_FIELDS = (
+    "target_model",
+    "initial_potential_v",
+    "high_potential_v",
+    "low_potential_v",
+    "final_potential_v",
+    "initial_scan_direction",
+    "scan_rate_v_s",
+    "potential_step_v",
+    "quiet_time_s",
+    "cycles",
+)
 SEQUENCE_PLAN_FIELDS = (
     "target_model",
     "protocol_name",
@@ -170,16 +182,7 @@ def _commissioning_model(value: Any) -> str:
 def _commissioning_confirmations(target_model: str) -> tuple[str, ...]:
     model = _commissioning_model(target_model)
     if model == "760B":
-        return (
-            "commissioning_approved",
-            "target_is_760b",
-            "no_other_chi_measurement_running",
-            "chi_desktop_closed",
-            "cell_setup_reviewed",
-            "electrode_leads_verified",
-            "cell_output_confirmed_off",
-            "protocol_parameters_reviewed",
-        )
+        return ()
     return (
         "commissioning_approved",
         f"target_is_{model.lower()}",
@@ -288,6 +291,99 @@ def cv_plan_to_sdk_parameters(
         "m_inpcl": float(normalized["sweep_segments"]),
         "m_inpsi": normalized["potential_step_v"],
         "m_qt": normalized["quiet_time_s"],
+    }
+
+
+def validate_direct_cv_plan(
+    plan: Any,
+    *,
+    expected_target_model: str | None = None,
+) -> dict[str, Any]:
+    """Normalize a 760B CV without imposing commissioning-only bounds.
+
+    The installed SDK is allowed to enforce its own electrical and data-size
+    limits.  This boundary only rejects values that cannot be represented as a
+    meaningful SDK request.
+    """
+
+    if not isinstance(plan, dict):
+        raise ValueError("CV plan must be an object")
+    unknown = sorted(set(plan) - set(DIRECT_CV_PLAN_FIELDS))
+    missing = sorted(set(DIRECT_CV_PLAN_FIELDS) - set(plan))
+    if unknown:
+        raise ValueError(f"unsupported CV fields: {', '.join(unknown)}")
+    if missing:
+        raise ValueError(f"missing CV fields: {', '.join(missing)}")
+    target_model = _commissioning_model(plan["target_model"])
+    if expected_target_model is not None:
+        expected = _commissioning_model(expected_target_model)
+        if target_model != expected:
+            raise ValueError(f"CV target_model must match the loaded {expected} SDK")
+    if target_model != "760B":
+        raise ValueError("direct CV plans are currently implemented only for 760B")
+
+    direction = plan["initial_scan_direction"]
+    if direction not in {"positive", "negative"}:
+        raise ValueError("initial_scan_direction must be positive or negative")
+    normalized: dict[str, Any] = {
+        "target_model": target_model,
+        "initial_scan_direction": direction,
+    }
+    for name in (
+        "initial_potential_v",
+        "high_potential_v",
+        "low_potential_v",
+        "final_potential_v",
+        "scan_rate_v_s",
+        "potential_step_v",
+        "quiet_time_s",
+    ):
+        normalized[name] = _finite_number(plan[name], name)
+    cycles = plan["cycles"]
+    if isinstance(cycles, bool) or not isinstance(cycles, int) or cycles < 1:
+        raise ValueError("cycles must be a positive integer")
+    normalized["cycles"] = cycles
+    if normalized["scan_rate_v_s"] <= 0.0:
+        raise ValueError("scan_rate_v_s must be greater than zero")
+    if normalized["potential_step_v"] <= 0.0:
+        raise ValueError("potential_step_v must be greater than zero")
+    if normalized["quiet_time_s"] < 0.0:
+        raise ValueError("quiet_time_s cannot be negative")
+    return normalized
+
+
+def direct_cv_plan_to_sdk_parameters(
+    plan: Any,
+    *,
+    expected_target_model: str | None = None,
+) -> dict[str, float]:
+    """Map an unrestricted 760B CV onto the parameters exposed by libec.
+
+    ``m_inpcl`` is documented in the installed DLL as sweep segments, each of
+    which is one half-cycle.  The DLL does not expose an independent Final E
+    value.  ``m_bFullCycle`` requests a return to Initial E when Final E equals
+    Initial E; otherwise the requested final value remains in the saved plan
+    and the SDK determines the endpoint from the sweep segments.
+    """
+
+    normalized = validate_direct_cv_plan(
+        plan,
+        expected_target_model=expected_target_model,
+    )
+    final_is_initial = abs(
+        normalized["final_potential_v"] - normalized["initial_potential_v"]
+    ) <= 1e-12
+    sweep_segments = normalized["cycles"] * 2 + (1 if final_is_initial else 0)
+    return {
+        "m_ei": normalized["initial_potential_v"],
+        "m_eh": normalized["high_potential_v"],
+        "m_el": normalized["low_potential_v"],
+        "m_pn": 1.0 if normalized["initial_scan_direction"] == "positive" else 0.0,
+        "m_vv": normalized["scan_rate_v_s"],
+        "m_inpcl": float(sweep_segments),
+        "m_inpsi": normalized["potential_step_v"],
+        "m_qt": normalized["quiet_time_s"],
+        "m_bFullCycle": 1.0 if final_is_initial else 0.0,
     }
 
 
@@ -423,16 +519,31 @@ def validate_sequence_plan(
             cv = dict(step)
             cv.pop("kind", None)
             cv["target_model"] = target_model
-            normalized = {"kind": "cv", **validate_cv_commissioning_plan(
+            normalized = {"kind": "cv", **validate_direct_cv_plan(
                 cv,
                 expected_target_model=target_model,
             )}
-            span = (
-                normalized["high_potential_v"] - normalized["initial_potential_v"]
-                + normalized["high_potential_v"] - normalized["low_potential_v"]
-                + normalized["initial_potential_v"] - normalized["low_potential_v"]
+            first_vertex = (
+                normalized["high_potential_v"]
+                if normalized["initial_scan_direction"] == "positive"
+                else normalized["low_potential_v"]
             )
-            estimated_duration += normalized["quiet_time_s"] + span / normalized["scan_rate_v_s"]
+            span = abs(first_vertex - normalized["initial_potential_v"])
+            span += max(0, normalized["cycles"] * 2 - 1) * abs(
+                normalized["high_potential_v"] - normalized["low_potential_v"]
+            )
+            if abs(
+                normalized["final_potential_v"] - normalized["initial_potential_v"]
+            ) <= 1e-12:
+                last_vertex = (
+                    normalized["low_potential_v"]
+                    if normalized["initial_scan_direction"] == "positive"
+                    else normalized["high_potential_v"]
+                )
+                span += abs(last_vertex - normalized["initial_potential_v"])
+            estimated_duration += (
+                normalized["quiet_time_s"] + span / normalized["scan_rate_v_s"]
+            )
         elif kind == "it":
             it = dict(step)
             it.pop("kind", None)
@@ -447,8 +558,6 @@ def validate_sequence_plan(
                 f"step {index} technique is unsupported by direct 760B execution: {kind}"
             )
         normalized_steps.append(normalized)
-    if estimated_duration > SEQUENCE_LIMITS["total_duration_max_s"]:
-        raise ValueError("estimated experiment sequence duration exceeds four hours")
     return {
         "target_model": target_model,
         "protocol_name": protocol_name.strip(),
@@ -920,6 +1029,45 @@ class LiveCVRunner:
             timeout_s=normalized["duration_s"] + normalized["quiet_time_s"] + 60.0,
         )
 
+    def run_direct_cv(self, plan: Any) -> dict[str, Any]:
+        """Run a 760B CV while leaving instrument ranges to the vendor SDK."""
+
+        normalized = validate_direct_cv_plan(
+            plan,
+            expected_target_model=self.target_model,
+        )
+        sdk_parameters = direct_cv_plan_to_sdk_parameters(
+            normalized,
+            expected_target_model=self.target_model,
+        )
+        first_vertex = (
+            normalized["high_potential_v"]
+            if normalized["initial_scan_direction"] == "positive"
+            else normalized["low_potential_v"]
+        )
+        span = abs(first_vertex - normalized["initial_potential_v"])
+        span += max(0, normalized["cycles"] * 2 - 1) * abs(
+            normalized["high_potential_v"] - normalized["low_potential_v"]
+        )
+        if abs(
+            normalized["final_potential_v"] - normalized["initial_potential_v"]
+        ) <= 1e-12:
+            last_vertex = (
+                normalized["low_potential_v"]
+                if normalized["initial_scan_direction"] == "positive"
+                else normalized["high_potential_v"]
+            )
+            span += abs(last_vertex - normalized["initial_potential_v"])
+        timeout_s = normalized["quiet_time_s"] + span / normalized["scan_rate_v_s"] + 60.0
+        return self._run_technique(
+            normalized,
+            sdk_parameters,
+            technique_name="CV",
+            technique_id=TECHNIQUE_IDS["CV"],
+            units={"x": "V", "y": "A"},
+            timeout_s=timeout_s,
+        )
+
     def _run_technique(
         self,
         normalized: dict[str, Any],
@@ -1222,7 +1370,7 @@ class LiveSequenceRunner:
             else:
                 technique_plan = {key: value for key, value in step.items() if key != "kind"}
                 if kind == "cv":
-                    result = self.technique_runner.run(technique_plan)
+                    result = self.technique_runner.run_direct_cv(technique_plan)
                 elif kind == "it":
                     result = self.technique_runner.run_it(technique_plan)
                 else:  # pragma: no cover - validator owns this invariant

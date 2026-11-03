@@ -249,8 +249,8 @@
             </div>
             <p id="chi760e-runner-detail" class="bridge-check-status" role="status" aria-live="polite">Start the selected SDK control bridge to inspect readiness.</p>
             <details class="bridge-discovery-details" id="chi760e-runner-details" open>
-              <summary>Review and run this protocol</summary>
-              <p class="card-note" id="chi-sdk-runner-instructions">Mark the bench available and review the current sequence. Preparing validates every step and reserves a unique run folder without contacting the instrument.</p>
+              <summary>Run this protocol</summary>
+              <p class="card-note" id="chi-sdk-runner-instructions">Mark the bench available, then prepare and run the current sequence. Preparing reserves a unique run folder without contacting the instrument.</p>
               <fieldset class="identity-confirmations" id="chi760e-run-confirmations" disabled>
                 <legend>Confirm immediately before starting</legend>
                 <label id="chi-sdk-target-confirmation-label"><input type="checkbox" data-chi-sdk-confirmation="target_is_selected_model" /> The connected instrument and installed SDK match the selected CHI model.</label>
@@ -271,7 +271,7 @@
               </div>
             </details>
             <aside class="safety-callout bridge-lock-note">
-              A separate local Windows approval is required at start. Stop uses the documented CHI SDK, and cleanup requests cell off after completion or error. iR settings remain part of the plan, but direct 760B execution is blocked while iR is enabled until its SDK mapping is verified.
+              The installed 760B SDK accepts cycles as half-cycle sweep segments and imposes its own operating limits. It has no independent Final E parameter: a final value equal to Initial E requests a return to Initial E; any other final value is saved with the protocol while the SDK determines the endpoint from the sweep segments. A separate local Windows approval is required at start. Stop uses the documented CHI SDK, and cleanup requests cell off after completion or error.
             </aside>
           </div>
           <details class="simulation-option">
@@ -363,7 +363,7 @@
       </footer>
     </main>
     <script src="bridge-client.js?v=echem-bridge-9"></script>
-    <script src="echem-bridge.js?v=echem-bridge-14"></script>
+    <script src="echem-bridge.js?v=echem-bridge-15"></script>
     <script src="protocols.js?v=echem-models-6"></script>
     <script src="smoke-test.js?v=echem-simulator-2"></script>
     <script src="simulator.js?v=echem-simulator-4"></script>

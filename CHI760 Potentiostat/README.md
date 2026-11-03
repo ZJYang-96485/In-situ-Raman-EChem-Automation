@@ -89,16 +89,17 @@ An explicit, mutually exclusive `--enable-chi760e-commissioning` or
 `--enable-chi760b-commissioning` process flag adds asynchronous worker commands.
 760E uses `cv-start/status/stop/result`; 760B additionally uses
 `sequence-start/status/stop/result` for ordered Wait, CV, and amperometric i-t
-steps.
-Every start still requires the complete local safety confirmation set and a
-strict model-matched CV plan: +/-0.25 V, 0.01-0.2 V/s, 0.001-0.01 V step, no more
-than 10 seconds quiet time, positive initial scan, and exactly two sweeps. The
-worker verifies every parameter readback, calls `CHI_Stop` during cleanup, and
+steps. The 760E path retains its bounded commissioning CV and browser
+confirmations. The direct 760B path has no browser confirmation checklist,
+commissioning voltage ceiling, or cycle cap. It maps cycles to the DLL's
+half-cycle sweep segments and lets the SDK/instrument enforce operating ranges.
+The DLL has no independent Final E parameter; only return-to-Initial-E is
+available through `m_bFullCycle`. The worker verifies every transmitted
+parameter readback, calls `CHI_Stop` during cleanup, and
 clears and verifies the `m_bCellOn` parameter. The bridge provides separate
 prepare, start, status, stop, and paginated-result routes. Preparation validates
 the plan and reserves an immutable local run directory without calling the
-worker. Start requires all browser confirmations plus a separate Windows
-approval. Terminal status retrieves and saves the result locally without
+worker. Start retains a separate Windows approval. Terminal status retrieves and saves the result locally without
 returning only the safe relative run folder. Each launcher enables only its matching model; the
 public page refuses control when the selected model and bridge target differ. The inspected
 CHI 760D desktop package contains no matching `libec760d.dll`; it cannot be

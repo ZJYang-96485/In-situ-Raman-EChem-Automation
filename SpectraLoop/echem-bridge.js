@@ -164,22 +164,17 @@
         return { kind: "wait", duration_s: parameters.duration_s };
       }
       if (step?.source_technique === "cv") {
-        if (parameters.cycles !== 1) {
-          throw new Error(`Step ${index + 1}: direct 760B CV currently requires one cycle.`);
-        }
-        if (Math.abs(parameters.final_voltage_v - parameters.initial_voltage_v) > 1e-9) {
-          throw new Error(`Step ${index + 1}: final potential must equal initial potential.`);
-        }
         return {
           kind: "cv",
           initial_potential_v: parameters.initial_voltage_v,
           high_potential_v: parameters.apex1_voltage_v,
           low_potential_v: parameters.apex2_voltage_v,
+          final_potential_v: parameters.final_voltage_v,
           initial_scan_direction: "positive",
           scan_rate_v_s: parameters.scan_rate_v_s,
           potential_step_v: parameters.step_size_v,
           quiet_time_s: 0,
-          sweep_segments: 2,
+          cycles: parameters.cycles,
         };
       }
       if (step?.source_technique === "it") {
@@ -339,7 +334,7 @@
       elements.prepare760EButton.disabled = !ready || Boolean(preparation760EToken);
       elements.start760EButton.disabled = !ready
         || !preparation760EToken
-        || !elements.runner760EInputs.every((input) => input.checked);
+        || (selectedModel === "760E" && !elements.runner760EInputs.every((input) => input.checked));
       elements.stop760EButton.disabled = !client
         || !["760B", "760E"].includes(selectedModel)
         || !active760EJobId
@@ -499,7 +494,8 @@
         ? view.commissioning760EDetail
         : "Bench is marked measurement in progress. Hardware preparation and execution are disabled.";
       elements.runner760EDetail.className = `bridge-check-status ${view.commissioning760EReady && benchAvailable ? "safe" : "warning"}`;
-      elements.runner760EFieldset.disabled = !view.commissioning760EReady || !benchAvailable;
+      elements.runner760EFieldset.disabled = selectedModel === "760E"
+        && (!view.commissioning760EReady || !benchAvailable);
       const controlEnabled = snapshot.instrument?.commissioning_target_model === selectedModel
         && snapshot.safety?.experiments_enabled === true;
       elements.executionLockTitle.textContent = controlEnabled
@@ -554,15 +550,12 @@
           ? "Execute the displayed Wait, CV, and Amperometric i-t steps in order. Results are saved under data/runs/date/task/trial."
           : "One two-sweep CV, within +/-0.25 V, using the current single-CV protocol. Results are saved in the local data folder.";
         elements.runnerSDKInstructions.textContent = selectedModel === "760B"
-          ? "Mark the bench available and review the current sequence. Preparing validates every step and reserves a unique run folder without contacting the instrument."
+          ? "Mark the bench available, then prepare and run the current sequence. Preparing reserves a unique run folder without contacting the instrument."
           : `Select CHI ${selectedModel}, mark the bench available, build exactly one one-cycle CV, and disable iR compensation. Preparing validates the plan and reserves a unique run folder; it does not contact the instrument.`;
+        elements.runner760EFieldset.hidden = selectedModel === "760B";
         elements.runnerSDKTargetLabel.lastChild.textContent = ` The connected instrument and installed SDK are for CHI ${selectedModel}.`;
-        elements.runnerSDKCellLabel.lastChild.textContent = selectedModel === "760B"
-          ? " The cell/sample setup is correct for this protocol."
-          : " The CHI internal dummy cell is selected and connected.";
-        elements.runnerSDKProtocolLabel.lastChild.textContent = selectedModel === "760B"
-          ? " I reviewed every displayed potential, duration, sample interval, and sequence step."
-          : " Every external sample is disconnected.";
+        elements.runnerSDKCellLabel.lastChild.textContent = " The CHI internal dummy cell is selected and connected.";
+        elements.runnerSDKProtocolLabel.lastChild.textContent = " Every external sample is disconnected.";
         elements.prepare760EButton.textContent = selectedModel === "760B" ? "Prepare current protocol" : "Prepare bounded CV";
         elements.start760EButton.textContent = selectedModel === "760B" ? "Run on CHI 760B" : "Start approved CV";
         elements.stop760EButton.textContent = selectedModel === "760B" ? "Stop experiment" : "Stop CV";
@@ -696,7 +689,7 @@
         preparation760EToken = result.preparation.preparation_token;
         const summary = result.preparation.summary;
         elements.runner760EActionStatus.textContent = selectedModel === "760B"
-          ? `Prepared ${result.preparation.run_label}: ${summary.steps.length} steps, approximately ${summary.estimated_duration_s} s. Check every confirmation to start.`
+          ? `Prepared ${result.preparation.run_label}: ${summary.steps.length} steps, approximately ${summary.estimated_duration_s} s. Ready to run.`
           : `Prepared ${result.preparation.run_label}: ${summary.low_potential_v} to ${summary.high_potential_v} V at ${summary.scan_rate_v_s} V/s. Check every confirmation to start.`;
         elements.runner760EActionStatus.style.color = "var(--safe)";
       } catch (error) {
@@ -718,7 +711,7 @@
         const result = await client.startSDKDummyCV(
           selectedModel,
           preparation760EToken,
-          runner760EConfirmations(),
+          selectedModel === "760B" ? {} : runner760EConfirmations(),
         );
         preparation760EToken = null;
         active760EJobId = result.run.job_id;

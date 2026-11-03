@@ -89,6 +89,15 @@ provides a documented Stop route, requests cell-off cleanup, and saves results
 under `runs/YYYY-MM-DD/task name/trial-NNN`. Every other experiment remains
 locked.
 
+`Start SpectraLoop 760B.cmd` enables the separate 760B SDK worker and the
+existing Protocol Builder's direct Wait/CV/amperometric i-t runner. The 760B
+runner has no browser confirmation checklist, artificial voltage ceiling, or
+cycle cap. Cycles are sent as the DLL's documented half-cycle sweep segments;
+the SDK and instrument enforce their supported ranges. Because that DLL has no
+independent Final E parameter, only a return to Initial E can be explicitly
+requested. Preparation and the separate local Windows start approval remain,
+and completed data are saved under the same date/task/trial layout.
+
 For command-line development without the deployed site, start the bridge from
 the `CHI760 Potentiostat` directory without `--web-url`; it serves and opens
 the bundled UI. The static interface can also be served directly:

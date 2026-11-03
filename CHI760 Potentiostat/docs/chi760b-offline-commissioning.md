@@ -19,28 +19,26 @@ sequences containing Wait, CV, and Amperometric i-t steps. Amperometric i-t is
 not presented as chronoamperometry because the validated 760B SDK surface does
 not expose a native CA technique.
 
-## First-run boundary
+## Direct protocol behavior
 
 The prepared cell and electrode setup remains the operator's selected setup.
-The direct protocol is constrained to:
+The direct protocol accepts ordered Wait, CV, and Amperometric i-t steps. For
+CV, SpectraLoop applies no commissioning voltage ceiling and no maximum cycle
+count. It checks only that numeric values are finite, cycles are a positive
+integer, and rate/step values are positive, then leaves the operating range to
+the CHI SDK and instrument.
 
-- 1-32 ordered Wait, CV, or Amperometric i-t steps;
-- one cycle (two sweeps) for each CV;
-- positive initial scan;
-- all potentials within +/-0.25 V;
-- scan rate 0.01-0.2 V/s;
-- potential step 0.001-0.01 V;
-- quiet time no longer than 10 seconds;
-- i-t sampling from 0.001 seconds through the run duration and no i-t run
-  longer than 3600 seconds;
-- total estimated sequence duration no longer than four hours;
-- iR compensation and Raman disabled for hardware execution. The full iR plan
-  remains visible and saved, but enabled iR fails preflight because its 760B
-  SDK parameter mapping is not yet verified.
+The installed DLL documents `m_inpcl` as sweep segments, each one half-cycle,
+so the worker sends two sweep segments per requested cycle. It exposes no
+independent Final E parameter. A final value equal to Initial E enables
+`m_bFullCycle` and adds the return segment; any other final value is retained in
+the saved protocol while the SDK determines the physical endpoint from its
+sweep segments. iR compensation remains visible and saved, but enabled iR
+fails preflight because its 760B SDK parameter mapping is not yet verified.
 
 Preparation reserves `data/runs/<date>/<task>/trial-NNN/` and writes the
-validated protocol without calling the worker. Start requires all browser
-confirmations and a separate Windows approval on the instrument computer. The
+validated protocol without calling the worker. The 760B browser confirmation
+checklist has been removed; start retains the separate Windows approval on the instrument computer. The
 worker checks model series 7B, writes and reads back every CV/i-t parameter, provides
 remote Stop, requests `CHI_Stop` during cleanup, turns the cell off, retrieves
 the results, and saves a step-aware CSV plus metadata locally.

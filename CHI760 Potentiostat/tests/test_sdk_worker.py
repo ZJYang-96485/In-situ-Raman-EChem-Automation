@@ -17,11 +17,13 @@ from chi760.sdk_worker import (
     SequenceExperimentJobManager,
     build_parser,
     cv_plan_to_sdk_parameters,
+    direct_cv_plan_to_sdk_parameters,
     inspect_runtime,
     it_plan_to_sdk_parameters,
     main,
     serve_requests,
     validate_cv_commissioning_plan,
+    validate_direct_cv_plan,
     validate_sequence_plan,
 )
 from contextlib import redirect_stdout
@@ -48,15 +50,24 @@ def commissioning_confirmations() -> dict[str, bool]:
 
 
 def direct_760b_plan() -> dict[str, object]:
-    cv = bounded_cv_plan("760B")
-    cv.pop("target_model")
     return {
         "target_model": "760B",
         "protocol_name": "760B CV and i-t",
         "ir_compensation": {"enabled": False, "mode": "automatic"},
         "steps": [
             {"kind": "wait", "duration_s": 0.0},
-            {"kind": "cv", **cv},
+            {
+                "kind": "cv",
+                "initial_potential_v": -0.6,
+                "high_potential_v": 0.8,
+                "low_potential_v": -0.2,
+                "final_potential_v": 0.0,
+                "initial_scan_direction": "positive",
+                "scan_rate_v_s": 0.05,
+                "potential_step_v": 0.002,
+                "quiet_time_s": 0.0,
+                "cycles": 3,
+            },
             {
                 "kind": "it",
                 "potential_v": 0.1,
@@ -70,16 +81,7 @@ def direct_760b_plan() -> dict[str, object]:
 
 
 def direct_760b_confirmations() -> dict[str, bool]:
-    return {
-        "commissioning_approved": True,
-        "target_is_760b": True,
-        "no_other_chi_measurement_running": True,
-        "chi_desktop_closed": True,
-        "cell_setup_reviewed": True,
-        "electrode_leads_verified": True,
-        "cell_output_confirmed_off": True,
-        "protocol_parameters_reviewed": True,
-    }
+    return {}
 
 
 class ImmediateSequenceRunner:
@@ -516,6 +518,24 @@ class SDKWorkerTests(unittest.TestCase):
             {"m_ei": 0.1, "m_inpsi": 0.5, "m_st": 2.0, "m_qt": 0.0},
             it_parameters,
         )
+        cv = {key: value for key, value in normalized["steps"][1].items() if key != "kind"}
+        cv_parameters = direct_cv_plan_to_sdk_parameters(cv, expected_target_model="760B")
+        self.assertEqual(-0.6, cv_parameters["m_ei"])
+        self.assertEqual(0.8, cv_parameters["m_eh"])
+        self.assertEqual(-0.2, cv_parameters["m_el"])
+        self.assertEqual(6.0, cv_parameters["m_inpcl"])
+        self.assertEqual(0.0, cv_parameters["m_bFullCycle"])
+
+        unrestricted = validate_direct_cv_plan(cv, expected_target_model="760B")
+        self.assertEqual(3, unrestricted["cycles"])
+        self.assertEqual(0.0, unrestricted["final_potential_v"])
+
+        return_to_initial = {**cv, "final_potential_v": -0.6}
+        return_parameters = direct_cv_plan_to_sdk_parameters(
+            return_to_initial, expected_target_model="760B"
+        )
+        self.assertEqual(7.0, return_parameters["m_inpcl"])
+        self.assertEqual(1.0, return_parameters["m_bFullCycle"])
 
         enabled_ir = direct_760b_plan()
         enabled_ir["ir_compensation"] = {"enabled": True}

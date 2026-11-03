@@ -175,15 +175,24 @@ def bounded_760b_plan() -> dict[str, object]:
 
 
 def direct_760b_plan() -> dict[str, object]:
-    cv = bounded_760b_plan()
-    cv.pop("target_model")
     return {
         "target_model": "760B",
         "protocol_name": "Direct 760B sequence",
         "ir_compensation": {"enabled": False, "mode": "automatic"},
         "steps": [
             {"kind": "wait", "duration_s": 0.0},
-            {"kind": "cv", **cv},
+            {
+                "kind": "cv",
+                "initial_potential_v": -0.6,
+                "high_potential_v": 0.8,
+                "low_potential_v": -0.2,
+                "final_potential_v": 0.0,
+                "initial_scan_direction": "positive",
+                "scan_rate_v_s": 0.05,
+                "potential_step_v": 0.002,
+                "quiet_time_s": 0.0,
+                "cycles": 3,
+            },
             {"kind": "it", "potential_v": 0.1, "duration_s": 2.0, "sample_period_s": 0.5, "area_cm2": 1.0, "quiet_time_s": 0.0},
         ],
     }
@@ -391,7 +400,7 @@ class WorkerTransportTests(unittest.TestCase):
             self.assertFalse((root / "runs").exists())
         self.assertEqual([], worker.requests)
 
-    def test_760b_gateway_prepares_and_starts_only_with_760b_confirmation(self) -> None:
+    def test_760b_gateway_prepares_and_starts_without_browser_confirmations(self) -> None:
         worker = FakeCommissioningWorker("760B")
         gateway = SDKWorkerCommissioningGateway(
             worker,
@@ -412,9 +421,7 @@ class WorkerTransportTests(unittest.TestCase):
 
         self.assertEqual("job-760b", started["job_id"])
         self.assertEqual("760B", worker.request_payloads[0][1]["plan"]["target_model"])
-        self.assertTrue(
-            worker.request_payloads[0][1]["confirmations"]["target_is_760b"]
-        )
+        self.assertEqual({}, worker.request_payloads[0][1]["confirmations"])
 
     def test_760b_gateway_runs_sequence_and_saves_step_aware_csv(self) -> None:
         worker = FakeCommissioningWorker("760B")

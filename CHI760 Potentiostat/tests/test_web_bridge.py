@@ -733,7 +733,7 @@ class WebBridgeTests(unittest.TestCase):
         self.assertEqual("chi760e_internal_dummy", status["safety"]["mode"])
         self.assertTrue(status["safety"]["remote_stop_available"])
 
-    def test_760b_route_accepts_only_760b_controller_and_confirmations(self) -> None:
+    def test_760b_route_accepts_only_760b_controller_without_browser_confirmations(self) -> None:
         controller = Fake760ECommissioningController("760B")
         self.state.gateway = controller
         self.state.commissioning_760e = controller  # type: ignore[assignment]
@@ -770,12 +770,11 @@ class WebBridgeTests(unittest.TestCase):
             method="POST",
             payload={
                 "preparation_token": preparation["preparation_token"],
-                "confirmations": browser_sdk_confirmations("760B"),
             },
         )
         self.assertEqual(200, response.status)
         self.assertTrue(json.loads(raw)["run"]["started"])
-        self.assertTrue(controller.starts[0][1]["target_is_760b"])
+        self.assertEqual({"commissioning_approved": True}, controller.starts[0][1])
 
         _status_response, status_raw = self.request("/v1/status")
         self.assertEqual(

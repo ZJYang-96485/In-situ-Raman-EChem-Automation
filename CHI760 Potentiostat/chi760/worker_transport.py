@@ -40,18 +40,7 @@ REQUIRED_760E_COMMISSIONING_CONFIRMATIONS = frozenset(
         "cell_output_confirmed_off",
     }
 )
-REQUIRED_760B_COMMISSIONING_CONFIRMATIONS = frozenset(
-    {
-        "commissioning_approved",
-        "target_is_760b",
-        "no_other_chi_measurement_running",
-        "chi_desktop_closed",
-        "cell_setup_reviewed",
-        "electrode_leads_verified",
-        "cell_output_confirmed_off",
-        "protocol_parameters_reviewed",
-    }
-)
+REQUIRED_760B_COMMISSIONING_CONFIRMATIONS = frozenset()
 SUPPORTED_SDK_COMMISSIONING_MODELS = frozenset({"760B", "760E"})
 _CV_PLAN_FIELDS = frozenset(
     {

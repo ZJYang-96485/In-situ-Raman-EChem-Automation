@@ -297,11 +297,12 @@ test("760B builder sequence maps Wait, CV, and amperometric i-t without discardi
         initial_potential_v: 0,
         high_potential_v: 0.2,
         low_potential_v: -0.2,
+        final_potential_v: 0,
         initial_scan_direction: "positive",
         scan_rate_v_s: 0.05,
         potential_step_v: 0.002,
         quiet_time_s: 0,
-        sweep_segments: 2,
+        cycles: 1,
       },
       {
         kind: "it",
@@ -317,6 +318,32 @@ test("760B builder sequence maps Wait, CV, and amperometric i-t without discardi
     () => direct760BSequencePlan({ ...protocol, ir_compensation: { enabled: true } }),
     /requires iR disabled/,
   );
+});
+
+test("760B direct CV preserves unrestricted initial/final potentials and cycle count", () => {
+  const protocol = {
+    target_model: "760B",
+    protocol_name: "Three-cycle CV",
+    validation: { valid: true },
+    ir_compensation: { enabled: false },
+    steps: [{
+      source_technique: "cv",
+      parameters: {
+        initial_voltage_v: -0.6,
+        apex1_voltage_v: 0.8,
+        apex2_voltage_v: -0.2,
+        final_voltage_v: 0,
+        scan_rate_v_s: 0.05,
+        step_size_v: 0.002,
+        cycles: 3,
+      },
+    }],
+  };
+
+  const plan = direct760BSequencePlan(protocol);
+  assert.equal(plan.steps[0].initial_potential_v, -0.6);
+  assert.equal(plan.steps[0].final_potential_v, 0);
+  assert.equal(plan.steps[0].cycles, 3);
 });
 
 test("selected SDK model remains locked when the local bridge targets another model", () => {
