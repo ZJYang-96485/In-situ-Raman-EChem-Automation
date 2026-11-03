@@ -80,8 +80,9 @@ class FakeReadyGateway:
 
 
 class Fake760ECommissioningController(FakeReadyGateway):
-    def __init__(self) -> None:
+    def __init__(self, target_model: str = "760E") -> None:
         super().__init__()
+        self.target_model = target_model
         self.prepares: list[tuple[dict[str, object], Path, str]] = []
         self.starts: list[tuple[str, dict[str, object]]] = []
         self.statuses: list[str] = []
@@ -116,9 +117,9 @@ class Fake760ECommissioningController(FakeReadyGateway):
         if preparation_token != "prepared-760e":
             raise ValueError("invalid preparation")
         return {
-            "target_model": "760E",
-            "task_name": "760E catalyst screening",
-            **bounded_760e_plan(),
+            "target_model": self.target_model,
+            "task_name": f"{self.target_model} catalyst screening",
+            **bounded_sdk_plan(self.target_model),
         }
 
     def start(
@@ -162,8 +163,12 @@ class Fake760ECommissioningController(FakeReadyGateway):
 
 
 def bounded_760e_plan() -> dict[str, object]:
+    return bounded_sdk_plan("760E")
+
+
+def bounded_sdk_plan(target_model: str) -> dict[str, object]:
     return {
-        "target_model": "760E",
+        "target_model": target_model,
         "initial_potential_v": 0.0,
         "high_potential_v": 0.2,
         "low_potential_v": -0.2,
@@ -176,8 +181,12 @@ def bounded_760e_plan() -> dict[str, object]:
 
 
 def browser_760e_confirmations() -> dict[str, bool]:
+    return browser_sdk_confirmations("760E")
+
+
+def browser_sdk_confirmations(target_model: str) -> dict[str, bool]:
     return {
-        "target_is_760e": True,
+        f"target_is_{target_model.lower()}": True,
         "no_other_chi_measurement_running": True,
         "chi_desktop_closed": True,
         "internal_dummy_cell_connected": True,
@@ -588,6 +597,15 @@ class WebBridgeTests(unittest.TestCase):
         self.assertEqual(2, text.count("--enable-chi760e-commissioning"))
         self.assertIn("app=spectraloop-20261019-3", text)
 
+    def test_760b_launcher_selects_its_own_sdk_runtime_and_commissioning_flag(self) -> None:
+        launcher = Path(__file__).resolve().parents[2] / "Start SpectraLoop 760B.cmd"
+        text = launcher.read_text(encoding="utf-8")
+
+        self.assertIn(".runtime\\chi760b-worker", text)
+        self.assertIn('--dll-name "libec760b.dll"', text)
+        self.assertEqual(2, text.count("--enable-chi760b-commissioning"))
+        self.assertNotIn("--enable-chi760e-commissioning", text)
+
     def test_760e_prepare_start_status_stop_and_result_are_separately_gated(self) -> None:
         controller = Fake760ECommissioningController()
         self.state.gateway = controller
@@ -698,6 +716,56 @@ class WebBridgeTests(unittest.TestCase):
         self.assertEqual(200, status_response.status)
         self.assertEqual("chi760e_internal_dummy", status["safety"]["mode"])
         self.assertTrue(status["safety"]["remote_stop_available"])
+
+    def test_760b_route_accepts_only_760b_controller_and_confirmations(self) -> None:
+        controller = Fake760ECommissioningController("760B")
+        self.state.gateway = controller
+        self.state.commissioning_760e = controller  # type: ignore[assignment]
+        self.state.chi760e_experiment_approval = lambda _summary: True
+        self.state.storage.configure(self.selected_folder)
+
+        with self.assertRaises(HTTPError) as caught:
+            self.request(
+                "/v1/instrument/760e/prepare",
+                method="POST",
+                payload={
+                    "task_name": "wrong model",
+                    "plan": bounded_760e_plan(),
+                },
+            )
+        self.assertEqual(409, caught.exception.code)
+        caught.exception.close()
+        self.assertEqual([], controller.prepares)
+
+        response, raw = self.request(
+            "/v1/instrument/760b/prepare",
+            method="POST",
+            payload={
+                "task_name": "760B first CV",
+                "plan": bounded_sdk_plan("760B"),
+            },
+        )
+        preparation = json.loads(raw)["preparation"]
+        self.assertEqual(200, response.status)
+        self.assertEqual(1, len(controller.prepares))
+
+        response, raw = self.request(
+            "/v1/instrument/760b/start",
+            method="POST",
+            payload={
+                "preparation_token": preparation["preparation_token"],
+                "confirmations": browser_sdk_confirmations("760B"),
+            },
+        )
+        self.assertEqual(200, response.status)
+        self.assertTrue(json.loads(raw)["run"]["started"])
+        self.assertTrue(controller.starts[0][1]["target_is_760b"])
+
+        _status_response, status_raw = self.request("/v1/status")
+        self.assertEqual(
+            "chi760b_internal_dummy",
+            json.loads(status_raw)["safety"]["mode"],
+        )
 
     def test_760d_dummy_run_requires_prepare_confirmations_and_local_approval(self) -> None:
         executable = Path(self.temporary.name) / "chi760d.exe"

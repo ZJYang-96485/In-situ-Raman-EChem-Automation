@@ -26,9 +26,9 @@ from io import StringIO
 import json
 
 
-def bounded_cv_plan() -> dict[str, object]:
+def bounded_cv_plan(target_model: str = "760E") -> dict[str, object]:
     return {
-        "target_model": "760E",
+        "target_model": target_model,
         "initial_potential_v": 0.0,
         "high_potential_v": 0.2,
         "low_potential_v": -0.2,
@@ -222,6 +222,23 @@ class SDKWorkerTests(unittest.TestCase):
         self.assertEqual(1.0, parameters["m_pn"])
         self.assertEqual(2.0, parameters["m_inpcl"])
 
+    def test_760b_commissioning_cv_uses_the_same_bounded_vendor_fields(self):
+        plan = bounded_cv_plan("760B")
+        normalized = validate_cv_commissioning_plan(
+            plan, expected_target_model="760B"
+        )
+        parameters = cv_plan_to_sdk_parameters(
+            normalized, expected_target_model="760B"
+        )
+
+        self.assertEqual("760B", normalized["target_model"])
+        self.assertEqual(0.2, parameters["m_eh"])
+        self.assertEqual(-0.2, parameters["m_el"])
+        with self.assertRaisesRegex(ValueError, "loaded 760E SDK"):
+            validate_cv_commissioning_plan(
+                plan, expected_target_model="760E"
+            )
+
     def test_commissioning_cv_rejects_out_of_scope_or_ambiguous_values(self):
         invalid_changes = (
             {"target_model": "760D"},
@@ -253,9 +270,21 @@ class SDKWorkerTests(unittest.TestCase):
                 "--enable-chi760e-commissioning",
             ]
         )
+        enabled_760b = parser.parse_args(
+            [
+                "serve",
+                "--sdk-dir",
+                "sdk",
+                "--runtime-dir",
+                "runtime",
+                "--enable-chi760b-commissioning",
+            ]
+        )
 
         self.assertFalse(locked.enable_chi760e_commissioning)
+        self.assertFalse(locked.enable_chi760b_commissioning)
         self.assertTrue(enabled.enable_chi760e_commissioning)
+        self.assertTrue(enabled_760b.enable_chi760b_commissioning)
 
     def test_persistent_protocol_serves_status_then_clean_shutdown(self):
         requests = StringIO(
@@ -374,6 +403,37 @@ class SDKWorkerTests(unittest.TestCase):
         self.assertEqual("760E", payload["result"]["target_model"])
         wait_for_job_state(manager, payload["result"]["job_id"], {"completed"})
         self.assertEqual(1, len(runner.plans))
+
+    def test_enabled_760b_protocol_requires_760b_target_confirmation(self):
+        runner = ImmediateCVRunner()
+        manager = CVCommissioningJobManager(runner, target_model="760B")
+        confirmations = commissioning_confirmations()
+        confirmations.pop("target_is_760e")
+        confirmations["target_is_760b"] = True
+        request = {
+            "schema_version": "0.1",
+            "id": 9,
+            "command": "cv-start",
+            "plan": bounded_cv_plan("760B"),
+            "confirmations": confirmations,
+        }
+        requests = StringIO(json.dumps(request) + "\n")
+        responses = StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            serve_requests(
+                directory,
+                directory,
+                enable_chi760b_commissioning=True,
+                commissioning_jobs=manager,
+                input_stream=requests,
+                output_stream=responses,
+            )
+
+        payload = json.loads(responses.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual("760B", payload["result"]["target_model"])
+        wait_for_job_state(manager, payload["result"]["job_id"], {"completed"})
+        self.assertEqual("760B", runner.plans[0]["target_model"])
 
 
 if __name__ == "__main__":

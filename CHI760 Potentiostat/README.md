@@ -1,10 +1,10 @@
 # CHI 760-series Potentiostat
 
 This module provides a connection-free, model-profiled planning surface for CH
-Instruments 760-series automation. The 760E SDK worker and 760D desktop-macro
-commissioning path are separate adapters. CHI 760B work is currently limited to
-offline, model-gated CV and amperometric i-t planning while the connected unit
-is occupied by a measurement. See
+Instruments 760-series automation. The 760B and 760E SDK workers and the 760D
+desktop-macro commissioning path are separate, model-gated adapters. The 760B
+SDK path now supports one bounded internal-dummy CV commissioning workflow in
+addition to offline CV and amperometric i-t planning. See
 [`docs/chi760b-offline-commissioning.md`](docs/chi760b-offline-commissioning.md).
 
 ## Electrochemistry-only Windows node
@@ -37,8 +37,8 @@ records belong under `data/discovery/` and simulations under
 
 `chi760.web_bridge` exposes the same fail-closed boundary to the SpectraLoop
 browser UI. It listens only on loopback, requires a per-launch bearer token,
-and restricts browser origins. On Windows the normal launcher starts a
-persistent repository-local 32-bit 760E SDK worker, when that runtime is
+and restricts browser origins. On Windows each SDK launcher starts its own
+persistent repository-local 32-bit 760B or 760E worker, when that runtime is
 installed, and communicates over private stdin/stdout JSON pipes. The worker
 opens no network port. A local Windows approval is required before any SDK
 getter is called. A separately gated worker commissioning mode implements one
@@ -61,14 +61,23 @@ Git:
 ```text
 .runtime/
   python-x86/python.exe
-  chi-worker/libec760e.dll
-  chi-worker/QtCore4.dll
-  chi-worker/QtGui4.dll
-  chi-worker/QtSvg4.dll
-  chi-worker/QtXml4.dll
+  chi-worker/                 # 760E runtime
+    libec760e.dll
+    QtCore4.dll
+    QtGui4.dll
+    QtSvg4.dll
+    QtXml4.dll
+  chi760b-worker/             # 760B runtime
+    libec760b.dll
+    QtCore4.dll
+    QtGui4.dll
+    QtSvg4.dll
+    QtXml4.dll
 ```
 
-`Start SpectraLoop.cmd` automatically uses this layout. Another computer can
+`Start SpectraLoop.cmd` selects the 760E runtime and
+`Start SpectraLoop 760B.cmd` selects the separate 760B runtime. Both launchers
+resolve the repository location at runtime. Another computer can
 override it without changing source code by setting
 `SPECTRALOOP_CHI_WORKER_PYTHON`, `SPECTRALOOP_CHI_SDK_DIR`,
 `SPECTRALOOP_CHI_RUNTIME_DIR`, `SPECTRALOOP_CHI_DLL`, or
@@ -76,10 +85,11 @@ override it without changing source code by setting
 
 By default, the persistent protocol permits only status, an explicitly
 acknowledged DLL load check, approved SDK capability discovery, and shutdown.
-An explicit `--enable-chi760e-commissioning` process flag adds asynchronous
+An explicit, mutually exclusive `--enable-chi760e-commissioning` or
+`--enable-chi760b-commissioning` process flag adds asynchronous
 `cv-start`, `cv-status`, `cv-stop`, and paginated `cv-result` worker commands.
 Every start still requires the complete local safety confirmation set and a
-strict 760E-only CV plan: +/-0.25 V, 0.01-0.2 V/s, 0.001-0.01 V step, no more
+strict model-matched CV plan: +/-0.25 V, 0.01-0.2 V/s, 0.001-0.01 V step, no more
 than 10 seconds quiet time, positive initial scan, and exactly two sweeps. The
 worker verifies every parameter readback, calls `CHI_Stop` during cleanup, and
 clears and verifies the `m_bCellOn` parameter. The bridge provides separate
@@ -87,8 +97,8 @@ prepare, start, status, stop, and paginated-result routes. Preparation validates
 the plan and reserves an immutable local run directory without calling the
 worker. Start requires all browser confirmations plus a separate Windows
 approval. Terminal status retrieves and saves the result locally without
-returning the storage path. `Start SpectraLoop.cmd` enables this 760E mode; the
-public page displays its controls only for the selected 760E model. The inspected
+returning the storage path. Each launcher enables only its matching model; the
+public page refuses control when the selected model and bridge target differ. The inspected
 CHI 760D desktop package contains no matching `libec760d.dll`; it cannot be
 selected through the 760E worker merely by renaming the executable or folder.
 

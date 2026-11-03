@@ -18,7 +18,9 @@ The controller and parameter models live in
 `MockCHI760` and the traceable `DryRunCHI760E` backend exercise the automation
 workflow without connecting to an instrument. Select `760B`, `760C`, `760D`, or `760E` when creating
 `CHI760Controller`; each profile gates the techniques that this project exposes.
-This repository does not yet include a verified live hardware driver.
+The repository includes separately gated 760B and 760E SDK commissioning
+workers and a 760D desktop adapter. These are deliberately limited to bounded
+internal-dummy workflows; broad external-sample control is not enabled.
 
 For the 760E, the offline surface includes the techniques listed in the public
 libec model matrix: CV, i-t, CA, SWV, IMP/EIS, IMPE, OCPT/OCP, STEP, and
@@ -84,20 +86,21 @@ a second cleaning pipeline.
 coordinated electrochemistry/Raman workflow and a future safety-gated
 decision-automation layer. It runs in a browser and exports
 configuration, protocol, check-report, and simulated-session JSON. Its single electrochemistry page switches
-between a CHI 760E protocol builder and synchronized data, with optional
+among CHI 760B, 760D, and 760E protocol profiles and synchronized data, with optional
 disk-only RDE planning, a compact offline check, and a connection-free
 execution simulator driven by the current protocol. The simulator generates
 deterministic synchronized data and explicit fault states with zero hardware
-calls. No hardware, laser, trigger, physical iR action, or automated decision
-action is available from the app. A loopback-only local bridge now lets the
-setup page select a data folder using the Windows folder picker and provides
-the secured boundary for a future verified CHI identity adapter. No experiment
-endpoint is enabled.
+calls. Laser, trigger, physical iR, and automated decision actions remain
+unavailable. A loopback-only local bridge lets the setup page select a data
+folder using the Windows folder picker. Explicit launchers can enable only the
+matching bounded internal-dummy CV endpoint; all other experiment endpoints
+remain locked.
 
-On the instrument computer, double-click `Start SpectraLoop.cmd`; no VS Code
-session or Python package installation is required. The launcher resolves the
-repository location at runtime, starts the bridge only on `127.0.0.1`, and opens
-`spectraloop.org` with a temporary authentication token. The same bridge can
+On the instrument computer, double-click `Start SpectraLoop.cmd` for 760E,
+`Start SpectraLoop 760B.cmd` for 760B, or the separate 760D launcher; no VS Code
+session is required. The launcher resolves the repository location at runtime,
+starts the bridge only on `127.0.0.1`, and opens `spectraloop.org` with a
+temporary authentication token. The same bridge can
 serve the bundled interface when working offline by double-clicking
 `Start SpectraLoop Local.cmd`.
 

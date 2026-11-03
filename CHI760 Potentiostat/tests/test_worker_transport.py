@@ -11,6 +11,7 @@ from typing import Any, Mapping
 from chi760.worker_transport import (
     CHI760ECommissioningError,
     PersistentSDKWorker,
+    REQUIRED_760B_COMMISSIONING_CONFIRMATIONS,
     REQUIRED_760E_COMMISSIONING_CONFIRMATIONS,
     SDKWorkerCommissioningGateway,
     SDKWorkerDiscoveryGateway,
@@ -60,11 +61,13 @@ class FakeWorker:
 
 
 class FakeCommissioningWorker(FakeWorker):
-    def __init__(self) -> None:
+    def __init__(self, target_model: str = "760E") -> None:
         super().__init__()
+        self.target_model = target_model
         self.status.update(
             {
                 "commissioning_mode_enabled": True,
+                "commissioning_target_model": target_model,
                 "experiments_enabled": True,
                 "missing_commissioning_exports": [],
             }
@@ -84,7 +87,11 @@ class FakeCommissioningWorker(FakeWorker):
         self.requests.append(command)
         self.request_payloads.append((command, payload))
         if command == "cv-start":
-            return {"job_id": "job-760e", "state": "starting", "target_model": "760E"}
+            return {
+                "job_id": f"job-{self.target_model.lower()}",
+                "state": "starting",
+                "target_model": self.target_model,
+            }
         if command == "cv-status":
             return {
                 "job_id": "job-760e",
@@ -127,6 +134,10 @@ def bounded_760e_plan() -> dict[str, object]:
     }
 
 
+def bounded_760b_plan() -> dict[str, object]:
+    return {**bounded_760e_plan(), "target_model": "760B"}
+
+
 def commissioning_confirmations() -> dict[str, bool]:
     return {name: True for name in REQUIRED_760E_COMMISSIONING_CONFIRMATIONS}
 
@@ -155,6 +166,29 @@ class WorkerTransportTests(unittest.TestCase):
         self.assertEqual(
             1, enabled.command().count("--enable-chi760e-commissioning")
         )
+
+    def test_760b_commissioning_worker_flag_is_explicit_and_exclusive(self) -> None:
+        config = default_worker_launch_config()
+        enabled = WorkerLaunchConfig(
+            python_executable=config.python_executable,
+            worker_script=config.worker_script,
+            sdk_directory=config.sdk_directory,
+            runtime_directory=config.runtime_directory,
+            dll_name="libec760b.dll",
+            enable_chi760b_commissioning=True,
+        )
+
+        self.assertEqual(1, enabled.command().count("--enable-chi760b-commissioning"))
+        self.assertNotIn("--enable-chi760e-commissioning", enabled.command())
+        with self.assertRaisesRegex(ValueError, "only one"):
+            WorkerLaunchConfig(
+                python_executable=config.python_executable,
+                worker_script=config.worker_script,
+                sdk_directory=config.sdk_directory,
+                runtime_directory=config.runtime_directory,
+                enable_chi760e_commissioning=True,
+                enable_chi760b_commissioning=True,
+            ).command()
 
     def test_persistent_process_handles_multiple_requests(self) -> None:
         worker_script = (
@@ -305,6 +339,31 @@ class WorkerTransportTests(unittest.TestCase):
 
             self.assertFalse((root / "runs").exists())
         self.assertEqual([], worker.requests)
+
+    def test_760b_gateway_prepares_and_starts_only_with_760b_confirmation(self) -> None:
+        worker = FakeCommissioningWorker("760B")
+        gateway = SDKWorkerCommissioningGateway(
+            worker,
+            target="CHI 760B SDK",
+            target_model="760B",
+            execution_enabled=True,
+        )
+        confirmations = {
+            name: True for name in REQUIRED_760B_COMMISSIONING_CONFIRMATIONS
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            preparation = gateway.prepare(
+                bounded_760b_plan(), Path(directory), "760B first CV"
+            )
+            started = gateway.start(
+                str(preparation["preparation_token"]), confirmations
+            )
+
+        self.assertEqual("job-760b", started["job_id"])
+        self.assertEqual("760B", worker.request_payloads[0][1]["plan"]["target_model"])
+        self.assertTrue(
+            worker.request_payloads[0][1]["confirmations"]["target_is_760b"]
+        )
 
 
 if __name__ == "__main__":

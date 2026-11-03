@@ -1,65 +1,52 @@
-# CHI 760B offline commissioning
+# CHI 760B commissioning
 
-## Current safety state
+## Verified preparation state
 
-The connected CHI 760B is running a measurement. Treat the instrument computer,
-the CHI desktop application, its configuration files, its COM/USB connection,
-and its output directory as read-only operational state. Do not start another
-CHI process, send a discovery command, change the serial port, restart the local
-bridge, or copy mutable configuration files while the measurement is active.
+The 760B has a dedicated repository-local 32-bit worker runtime and launcher:
 
-The repository currently has model-profile evidence for only these 760B
-automation techniques:
+- `.runtime/chi760b-worker/libec760b.dll` with its required Qt runtime files;
+- `.runtime/python-x86/python.exe` for the isolated worker process;
+- `Start SpectraLoop 760B.cmd` for the deployed or bundled web interface.
 
-- cyclic voltammetry (CV);
-- amperometric i-t.
+Static inspection and read-only SDK discovery established an x86 7B library
+with the required CV worker exports. The SDK reports CV and amperometric i-t as
+the supported 760B automation techniques. It exposes no serial-number or
+firmware getter, so the SDK model-series result is not independent proof of the
+specific physical instrument connected to the USB cable.
 
-That evidence is a planning gate based on the documented public libec matrix.
-It is not proof that the installed 760B application exposes a compatible SDK or
-desktop command-line interface. There is no 760B executable, SDK library,
-header, help file, approved hash, or physical identity result in this
-repository, so live 760B control remains unavailable.
+The bridge and browser support only one real 760B operation: a bounded
+internal-dummy CV. Amperometric i-t remains planning-only. It is not presented
+as chronoamperometry because the validated 760B SDK surface does not expose a
+native CA technique.
 
-## Work allowed during the measurement
+## First-run boundary
 
-- Build and validate offline CV and i-t protocol JSON.
-- Run mock, simulation, schema, and model-gating tests.
-- Review repository source and already-copied documentation.
-- Prepare a post-measurement inspection checklist.
+The first physical run must use the CHI internal dummy cell, not an external
+sample. The protocol is constrained to:
 
-These activities must report zero hardware calls and must not enumerate or open
-instrument ports.
+- exactly one CV and one cycle (two sweeps);
+- positive initial scan;
+- all potentials within +/-0.25 V;
+- scan rate 0.01-0.2 V/s;
+- potential step 0.001-0.01 V;
+- quiet time no longer than 10 seconds;
+- iR compensation and Raman disabled.
 
-## After the measurement has ended
+Preparation reserves `data/runs/<date>/<task>/trial-NNN/` and writes the
+validated protocol without calling the worker. Start requires all browser
+confirmations and a separate Windows approval on the instrument computer. The
+worker checks model series 7B, writes and reads back every CV parameter, provides
+remote Stop, requests `CHI_Stop` during cleanup, turns the cell off, retrieves
+the result, and saves raw data and metadata locally.
 
-1. Save and export the measurement in the CHI application.
-2. Confirm with the operator that the cell output is off and the application
-   may be closed.
-3. Copy, rather than move, the 760B program's executable, help file, and any SDK
-   documentation into a new repository-local inspection folder. Do not reuse
-   the `chi760d` directory.
-4. Hash and parse those copies without loading an executable or DLL. Record the
-   product version, PE architecture, documented command-line switches, SDK
-   exports, and model limitations.
-5. Select an automation route only from that evidence. Do not rename or reuse a
-   760D/760E adapter for the 760B.
-6. Add a separate approved executable/library hash and a default-disabled local
-   bridge adapter.
-7. Commission first with disconnected external leads and the vendor's internal
-   dummy cell, using a bounded one-cycle protocol and a local Windows approval.
-8. Confirm saved output, cell-off cleanup, and an operator-accessible Stop path
-   before considering an external sample.
+## Remaining physical acceptance
 
-## Acceptance criteria for live readiness
+The software path, route isolation, model mismatch lock, storage selection,
+worker preflight, Stop route, and cleanup code are covered by automated tests.
+The first real internal-dummy CV has not yet been completed. External-sample
+experiments remain out of scope until that run confirms:
 
-Live 760B experiments are not ready until all of the following are recorded:
-
-- physical model and communication identity confirmed after the current run;
-- vendor-supported automation entry point documented for this installed build;
-- executable or library hash pinned and architecture matched;
-- CV/i-t parameter mapping validated without silent unit conversion;
-- unique non-overwriting output directory verified;
-- bounded internal-dummy run completed and parsed;
-- cell output and application cleanup confirmed;
-- stop/recovery behavior tested with an operator present.
-
+- the connected unit accepts the 7B SDK session;
+- saved potential/current data are complete and parseable;
+- Stop and cell-off cleanup behave as expected;
+- the operator verifies the instrument returns to a safe idle state.

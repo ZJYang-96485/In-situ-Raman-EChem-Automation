@@ -60,7 +60,7 @@ from .worker_transport import (
 )
 
 
-BRIDGE_VERSION = "0.8.0"
+BRIDGE_VERSION = "0.9.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -97,6 +97,28 @@ REQUIRED_760E_RUN_CONFIRMATIONS = frozenset(
         "cell_output_confirmed_off",
     }
 )
+REQUIRED_760B_RUN_CONFIRMATIONS = frozenset(
+    {
+        "target_is_760b",
+        "no_other_chi_measurement_running",
+        "chi_desktop_closed",
+        "internal_dummy_cell_connected",
+        "external_sample_disconnected",
+        "electrode_leads_verified",
+        "cell_output_confirmed_off",
+    }
+)
+
+
+def _required_sdk_run_confirmations(target_model: str) -> frozenset[str]:
+    if target_model == "760B":
+        return REQUIRED_760B_RUN_CONFIRMATIONS
+    if target_model == "760E":
+        return REQUIRED_760E_RUN_CONFIRMATIONS
+    raise BridgeRequestError(
+        "unsupported_instrument",
+        "The SDK commissioning model must be CHI 760B or CHI 760E.",
+    )
 
 
 class BridgeRequestError(ValueError):
@@ -318,11 +340,17 @@ def native_760e_experiment_approval(summary: Mapping[str, Any]) -> bool:
     root = tk.Tk()
     root.withdraw()
     try:
+        target_model = str(summary.get("target_model") or "760E").strip().upper()
+        if target_model not in {"760B", "760E"}:
+            raise BridgeRequestError(
+                "unsupported_instrument",
+                "The prepared SDK run has an unsupported target model.",
+            )
         root.attributes("-topmost", True)
         return bool(
             messagebox.askyesno(
-                "Start CHI 760E internal dummy CV",
-                "Allow one real CHI 760E CV on the INTERNAL DUMMY CELL?\n\n"
+                f"Start CHI {target_model} internal dummy CV",
+                f"Allow one real CHI {target_model} CV on the INTERNAL DUMMY CELL?\n\n"
                 f"Initial: {summary.get('initial_potential_v')} V\n"
                 f"High: {summary.get('high_potential_v')} V\n"
                 f"Low: {summary.get('low_potential_v')} V\n"
@@ -496,10 +524,17 @@ class BridgeState:
                 "active": None,
             }
         )
-        chi760e_enabled = (
+        sdk_commissioning_enabled = (
             instrument_status.get("experiment_control_enabled") is True
             and self.commissioning_760e is not None
         )
+        sdk_target_model = instrument_status.get("commissioning_target_model") or getattr(
+            self.commissioning_760e,
+            "target_model",
+            None,
+        )
+        if sdk_target_model not in {"760B", "760E"}:
+            sdk_target_model = None
         chi760d_enabled = desktop_status.get("experiment_control_enabled") is True
         return {
             "api_version": "v1",
@@ -513,21 +548,21 @@ class BridgeState:
             "desktop_760d": desktop_status,
             "safety": {
                 "mode": (
-                    "chi760e_internal_dummy"
-                    if chi760e_enabled
+                    f"chi{sdk_target_model.lower()}_internal_dummy"
+                    if sdk_commissioning_enabled and sdk_target_model is not None
                     else "chi760d_internal_dummy"
                     if chi760d_enabled
                     else "sdk_discovery_only"
                 ),
-                "experiments_enabled": chi760e_enabled or chi760d_enabled,
+                "experiments_enabled": sdk_commissioning_enabled or chi760d_enabled,
                 "experiment_scope": (
                     "internal_dummy_bounded_cv"
-                    if chi760e_enabled
+                    if sdk_commissioning_enabled
                     else "internal_dummy_bounded_cv_series"
                     if chi760d_enabled
                     else None
                 ),
-                "remote_stop_available": chi760e_enabled,
+                "remote_stop_available": sdk_commissioning_enabled,
                 "raman_enabled": False,
                 "laser_enabled": False,
                 "automated_decisions_enabled": False,
@@ -900,128 +935,102 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                     {"simulation": {"opened": True, "folder": relative_value}},
                 )
                 return
-            if route == "/v1/instrument/760e/prepare":
-                controller_760e = self.server.bridge_state.commissioning_760e
-                if controller_760e is None:
+            sdk_route = re.fullmatch(
+                r"/v1/instrument/(760b|760e)/(prepare|start|status|stop|result)",
+                route,
+            )
+            if sdk_route is not None:
+                target_model = sdk_route.group(1).upper()
+                action = sdk_route.group(2)
+                controller = self.server.bridge_state.commissioning_760e
+                if controller is None or controller.target_model != target_model:
                     raise BridgeRequestError(
-                        "chi760e_commissioning_unavailable",
-                        "The CHI 760E commissioning adapter is not configured.",
+                        f"chi{target_model.lower()}_commissioning_unavailable",
+                        f"The CHI {target_model} commissioning adapter is not configured.",
                         409,
                     )
-                plan = payload.get("plan")
-                if not isinstance(plan, Mapping):
-                    raise BridgeRequestError(
-                        "invalid_plan", "A bounded CHI 760E CV plan is required."
+                if action == "prepare":
+                    plan = payload.get("plan")
+                    if not isinstance(plan, Mapping):
+                        raise BridgeRequestError(
+                            "invalid_plan",
+                            f"A bounded CHI {target_model} CV plan is required.",
+                        )
+                    task_name = payload.get("task_name")
+                    if not isinstance(task_name, str) or not task_name.strip():
+                        raise BridgeRequestError(
+                            "task_name_required",
+                            "A task name is required to organize the saved trial.",
+                        )
+                    storage_root = self.server.bridge_state.storage.root
+                    if storage_root is None or not storage_root.is_dir():
+                        raise BridgeRequestError(
+                            "storage_required",
+                            "Choose an available storage folder first.",
+                        )
+                    preparation = controller.prepare(
+                        plan,
+                        storage_root,
+                        task_name.strip(),
                     )
-                task_name = payload.get("task_name")
-                if not isinstance(task_name, str) or not task_name.strip():
-                    raise BridgeRequestError(
-                        "task_name_required",
-                        "A task name is required to organize the saved trial.",
+                    self._json_response(
+                        HTTPStatus.OK,
+                        {"preparation": preparation},
                     )
-                storage_root = self.server.bridge_state.storage.root
-                if storage_root is None or not storage_root.is_dir():
-                    raise BridgeRequestError(
-                        "storage_required", "Choose an available storage folder first."
+                    return
+                if action == "start":
+                    confirmations = payload.get("confirmations")
+                    if not isinstance(confirmations, Mapping):
+                        raise BridgeRequestError(
+                            "confirmations_required",
+                            f"All {target_model} internal-dummy safety confirmations are required.",
+                        )
+                    missing = sorted(
+                        key
+                        for key in _required_sdk_run_confirmations(target_model)
+                        if confirmations.get(key) is not True
                     )
-                preparation = controller_760e.prepare(
-                    plan, storage_root, task_name.strip()
-                )
-                self._json_response(
-                    HTTPStatus.OK, {"preparation": preparation}
-                )
-                return
-            if route == "/v1/instrument/760e/start":
-                controller_760e = self.server.bridge_state.commissioning_760e
-                if controller_760e is None:
-                    raise BridgeRequestError(
-                        "chi760e_commissioning_unavailable",
-                        "The CHI 760E commissioning adapter is not configured.",
-                        409,
+                    if missing:
+                        raise BridgeRequestError(
+                            "confirmations_required",
+                            f"Missing confirmations: {', '.join(missing)}.",
+                        )
+                    preparation_token = payload.get("preparation_token")
+                    if not isinstance(preparation_token, str) or not preparation_token:
+                        raise BridgeRequestError(
+                            "preparation_required",
+                            f"Prepare the {target_model} run before starting it.",
+                        )
+                    summary = controller.preparation_summary(preparation_token)
+                    if not self.server.bridge_state.chi760e_experiment_approval(summary):
+                        raise BridgeRequestError(
+                            "local_approval_declined",
+                            f"The {target_model} run was not approved on the instrument computer.",
+                            409,
+                        )
+                    result = controller.start(
+                        preparation_token,
+                        {**dict(confirmations), "commissioning_approved": True},
                     )
-                confirmations = payload.get("confirmations")
-                if not isinstance(confirmations, Mapping):
-                    raise BridgeRequestError(
-                        "confirmations_required",
-                        "All 760E internal-dummy safety confirmations are required.",
-                    )
-                missing = sorted(
-                    key
-                    for key in REQUIRED_760E_RUN_CONFIRMATIONS
-                    if confirmations.get(key) is not True
-                )
-                if missing:
-                    raise BridgeRequestError(
-                        "confirmations_required",
-                        f"Missing confirmations: {', '.join(missing)}.",
-                    )
-                preparation_token = payload.get("preparation_token")
-                if not isinstance(preparation_token, str) or not preparation_token:
-                    raise BridgeRequestError(
-                        "preparation_required",
-                        "Prepare the 760E run before starting it.",
-                    )
-                summary = controller_760e.preparation_summary(preparation_token)
-                if not self.server.bridge_state.chi760e_experiment_approval(summary):
-                    raise BridgeRequestError(
-                        "local_approval_declined",
-                        "The 760E run was not approved on the instrument computer.",
-                        409,
-                    )
-                result = controller_760e.start(
-                    preparation_token,
-                    {**dict(confirmations), "commissioning_approved": True},
-                )
-                self._json_response(HTTPStatus.OK, {"run": result})
-                return
-            if route == "/v1/instrument/760e/status":
-                controller_760e = self.server.bridge_state.commissioning_760e
-                if controller_760e is None:
-                    raise BridgeRequestError(
-                        "chi760e_commissioning_unavailable",
-                        "The CHI 760E commissioning adapter is not configured.",
-                        409,
-                    )
+                    self._json_response(HTTPStatus.OK, {"run": result})
+                    return
                 job_id = payload.get("job_id")
                 if not isinstance(job_id, str) or not job_id:
                     raise BridgeRequestError(
-                        "job_id_required", "A CHI 760E job id is required."
+                        "job_id_required",
+                        f"A CHI {target_model} job id is required.",
                     )
-                result = controller_760e.job_status(job_id)
-                self._json_response(HTTPStatus.OK, {"run": result})
-                return
-            if route == "/v1/instrument/760e/stop":
-                controller_760e = self.server.bridge_state.commissioning_760e
-                if controller_760e is None:
-                    raise BridgeRequestError(
-                        "chi760e_commissioning_unavailable",
-                        "The CHI 760E commissioning adapter is not configured.",
-                        409,
-                    )
-                job_id = payload.get("job_id")
-                if not isinstance(job_id, str) or not job_id:
-                    raise BridgeRequestError(
-                        "job_id_required", "A CHI 760E job id is required."
-                    )
-                result = controller_760e.stop(job_id)
-                self._json_response(HTTPStatus.OK, {"run": result})
-                return
-            if route == "/v1/instrument/760e/result":
-                controller_760e = self.server.bridge_state.commissioning_760e
-                if controller_760e is None:
-                    raise BridgeRequestError(
-                        "chi760e_commissioning_unavailable",
-                        "The CHI 760E commissioning adapter is not configured.",
-                        409,
-                    )
-                job_id = payload.get("job_id")
-                if not isinstance(job_id, str) or not job_id:
-                    raise BridgeRequestError(
-                        "job_id_required", "A CHI 760E job id is required."
-                    )
+                if action == "status":
+                    result = controller.job_status(job_id)
+                    self._json_response(HTTPStatus.OK, {"run": result})
+                    return
+                if action == "stop":
+                    result = controller.stop(job_id)
+                    self._json_response(HTTPStatus.OK, {"run": result})
+                    return
                 offset = payload.get("offset", 0)
                 limit = payload.get("limit", 4096)
-                result = controller_760e.result_page(job_id, offset, limit)
+                result = controller.result_page(job_id, offset, limit)
                 self._json_response(HTTPStatus.OK, {"result": result})
                 return
             if route == "/v1/instrument/760d/prepare":
@@ -1145,7 +1154,7 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
         except CHI760ECommissioningError as error:
             self._json_error(
                 HTTPStatus.CONFLICT,
-                "chi760e_commissioning_blocked",
+                "chi_sdk_commissioning_blocked",
                 str(error),
             )
         except (BackendStateError, InvalidVendorResponseError, VendorCallError, VendorCallTimeoutError) as error:
@@ -1365,13 +1374,16 @@ def _build_worker_gateway(arguments: argparse.Namespace) -> DiscoveryGateway:
         runtime_directory=arguments.runtime_dir,
         dll_name=arguments.dll_name,
         enable_chi760e_commissioning=arguments.enable_chi760e_commissioning,
+        enable_chi760b_commissioning=arguments.enable_chi760b_commissioning,
     )
     try:
         worker = PersistentSDKWorker(config, timeout_s=arguments.worker_timeout)
-        if arguments.enable_chi760e_commissioning:
+        if arguments.enable_chi760e_commissioning or arguments.enable_chi760b_commissioning:
+            target_model = "760B" if arguments.enable_chi760b_commissioning else "760E"
             return SDKWorkerCommissioningGateway(
                 worker,
                 target=arguments.instrument_label,
+                target_model=target_model,
                 execution_enabled=True,
             )
         return SDKWorkerDiscoveryGateway(
@@ -1457,11 +1469,19 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_WORKER_TIMEOUT_S,
     )
     parser.add_argument("--disable-chi-worker", action="store_true")
-    parser.add_argument(
+    sdk_commissioning = parser.add_mutually_exclusive_group()
+    sdk_commissioning.add_argument(
         "--enable-chi760e-commissioning",
         action="store_true",
         help=(
             "Enable only the bounded CHI 760E internal-dummy CV worker workflow."
+        ),
+    )
+    sdk_commissioning.add_argument(
+        "--enable-chi760b-commissioning",
+        action="store_true",
+        help=(
+            "Enable only the bounded CHI 760B internal-dummy CV worker workflow."
         ),
     )
     parser.add_argument(
@@ -1477,13 +1497,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Enable only the bounded CHI 760D internal-dummy CV/wait series workflow.",
     )
     args = parser.parse_args(argv)
-    if args.disable_chi_worker and args.enable_chi760e_commissioning:
+    sdk_commissioning_enabled = (
+        args.enable_chi760e_commissioning or args.enable_chi760b_commissioning
+    )
+    if args.disable_chi_worker and sdk_commissioning_enabled:
         parser.error(
-            "--disable-chi-worker and --enable-chi760e-commissioning cannot be combined"
+            "--disable-chi-worker and SDK commissioning cannot be combined"
         )
-    if args.enable_chi760d_dummy and args.enable_chi760e_commissioning:
+    if args.enable_chi760d_dummy and sdk_commissioning_enabled:
         parser.error(
-            "760D and 760E commissioning modes cannot be enabled in one bridge"
+            "760D and SDK commissioning modes cannot be enabled in one bridge"
         )
 
     token = secrets.token_urlsafe(32)
@@ -1533,6 +1556,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.enable_chi760e_commissioning:
         print(
             "Mode: CHI 760E internal-dummy CV commissioning enabled; "
+            "all other experiments are locked"
+        )
+    elif args.enable_chi760b_commissioning:
+        print(
+            "Mode: CHI 760B internal-dummy CV commissioning enabled; "
             "all other experiments are locked"
         )
     elif args.enable_chi760d_dummy:

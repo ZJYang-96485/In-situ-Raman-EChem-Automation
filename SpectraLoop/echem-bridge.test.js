@@ -3,12 +3,12 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { bounded760EPlan, describeSnapshot } = require("./echem-bridge.js");
+const { boundedSDKPlan, bounded760EPlan, describeSnapshot } = require("./echem-bridge.js");
 
 test("electrochemistry page exposes bridge, storage, and identity controls", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
-  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-8");
-  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-12");
+  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-9");
+  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-13");
 
   assert.match(html, /id="echem-bridge-summary"/);
   assert.match(html, /id="echem-bridge-check-status"/);
@@ -23,7 +23,8 @@ test("electrochemistry page exposes bridge, storage, and identity controls", () 
   assert.match(html, /id="chi760e-prepare-run"/);
   assert.match(html, /id="chi760e-start-run"/);
   assert.match(html, /id="chi760e-stop-run"/);
-  assert.match(html, /data-chi760e-confirmation="cell_output_confirmed_off"/);
+  assert.match(html, /data-chi-sdk-confirmation="cell_output_confirmed_off"/);
+  assert.match(html, /data-chi-sdk-confirmation="target_is_selected_model"/);
   assert.ok(clientPosition >= 0);
   assert.ok(panelPosition > clientPosition);
 });
@@ -102,6 +103,7 @@ test("unavailable adapter is visibly different from a disconnected bridge", () =
     storage: { configured: true, available: true, folder_name: "experiment-data" },
     instrument: {
       target: "CHI 760E",
+      commissioning_target_model: "760E",
       discovery_enabled: false,
       blocker: "No verified adapter.",
     },
@@ -117,7 +119,11 @@ test("unavailable adapter is visibly different from a disconnected bridge", () =
 test("ready worker enables SDK inspection only, never experiment execution", () => {
   const view = describeSnapshot({
     storage: { configured: false, available: false, folder_name: null },
-    instrument: { target: "CHI 760E SDK", discovery_enabled: true },
+    instrument: {
+      target: "CHI 760E SDK",
+      commissioning_target_model: "760E",
+      discovery_enabled: true,
+    },
   });
 
   assert.equal(view.header, "Local bridge connected - SDK worker ready");
@@ -132,6 +138,7 @@ test("760E commissioning status exposes only the bounded internal-dummy workflow
     storage: { configured: true, available: true, folder_name: "data" },
     instrument: {
       target: "CHI 760E SDK",
+      commissioning_target_model: "760E",
       state: "ready_for_internal_dummy",
       discovery_enabled: true,
       experiment_control_enabled: true,
@@ -187,16 +194,75 @@ test("single builder CV maps to the exact bounded 760E worker plan", () => {
   );
 });
 
-test("760B selection exposes planning while protecting an active measurement", () => {
+test("single builder CV maps to the exact bounded 760B worker plan", () => {
+  const protocol = {
+    target_model: "760B",
+    protocol_name: "First 760B CV",
+    validation: { valid: true },
+    ir_compensation: { enabled: false },
+    steps: [{
+      source_technique: "cv",
+      parameters: {
+        initial_voltage_v: 0,
+        apex1_voltage_v: 0.2,
+        apex2_voltage_v: -0.2,
+        final_voltage_v: 0,
+        scan_rate_v_s: 0.05,
+        step_size_v: 0.002,
+        cycles: 1,
+      },
+    }],
+  };
+
+  assert.deepEqual(boundedSDKPlan(protocol, "760B"), {
+    target_model: "760B",
+    initial_potential_v: 0,
+    high_potential_v: 0.2,
+    low_potential_v: -0.2,
+    initial_scan_direction: "positive",
+    scan_rate_v_s: 0.05,
+    potential_step_v: 0.002,
+    quiet_time_s: 0,
+    sweep_segments: 2,
+  });
+});
+
+test("760B commissioning status exposes only the bounded internal-dummy workflow", () => {
   const view = describeSnapshot({
     storage: { configured: true, available: true, folder_name: "data" },
-    instrument: { target: "CHI 760E SDK", discovery_enabled: true },
-    desktop_760d: { experiment_control_enabled: true },
+    instrument: {
+      target: "CHI 760B SDK",
+      commissioning_target_model: "760B",
+      state: "ready_for_internal_dummy",
+      discovery_enabled: true,
+      experiment_control_enabled: true,
+      experiment_scope: "internal_dummy_bounded_cv",
+      remote_stop_available: true,
+    },
   }, "760B");
 
-  assert.equal(view.header, "Local bridge connected · CHI control locked");
-  assert.equal(view.instrumentLabel, "CHI 760B - measurement protected");
-  assert.match(view.instrumentDetail, /active measurement remains untouched/);
-  assert.equal(view.discoveryEnabled, false);
+  assert.equal(view.header, "Local bridge connected - 760B dummy CV ready");
+  assert.equal(view.instrumentLabel, "CHI 760B SDK - bounded CV control ready");
+  assert.match(view.instrumentDetail, /one bounded internal-dummy CV/);
+  assert.equal(view.discoveryEnabled, true);
+  assert.equal(view.commissioning760EReady, true);
   assert.equal(view.dummyReady, false);
+});
+
+test("selected SDK model remains locked when the local bridge targets another model", () => {
+  const view = describeSnapshot({
+    storage: { configured: true, available: true, folder_name: "data" },
+    instrument: {
+      target: "CHI 760B SDK",
+      commissioning_target_model: "760B",
+      discovery_enabled: true,
+      experiment_control_enabled: true,
+    },
+  }, "760E");
+
+  assert.equal(view.header, "Local bridge connected · CHI control locked");
+  assert.equal(view.instrumentLabel, "CHI 760E - selected bridge does not match");
+  assert.match(view.instrumentDetail, /configured for CHI 760B/);
+  assert.equal(view.discoveryEnabled, false);
+  assert.equal(view.commissioning760EReady, false);
 });

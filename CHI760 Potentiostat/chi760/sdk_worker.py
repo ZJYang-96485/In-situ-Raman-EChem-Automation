@@ -116,6 +116,11 @@ CV_COMMISSIONING_LIMITS = {
     "data_capacity": 65_535,
     "timeout_s": 180.0,
 }
+SUPPORTED_CV_COMMISSIONING_MODELS = frozenset({"760B", "760E"})
+SDK_MODEL_SERIES_ALIASES = {
+    "760B": frozenset({"760B", "7B"}),
+    "760E": frozenset({"760E", "7E"}),
+}
 CV_COMMISSIONING_CONFIRMATIONS = (
     "commissioning_approved",
     "target_is_760e",
@@ -139,7 +144,33 @@ CV_COMMISSIONING_PLAN_FIELDS = (
 )
 
 
-def validate_cv_commissioning_plan(plan: Any) -> dict[str, Any]:
+def _commissioning_model(value: Any) -> str:
+    model = str(value).strip().upper() if isinstance(value, str) else ""
+    if model not in SUPPORTED_CV_COMMISSIONING_MODELS:
+        supported = ", ".join(sorted(SUPPORTED_CV_COMMISSIONING_MODELS))
+        raise ValueError(f"CV commissioning target_model must be one of: {supported}")
+    return model
+
+
+def _commissioning_confirmations(target_model: str) -> tuple[str, ...]:
+    model = _commissioning_model(target_model)
+    return (
+        "commissioning_approved",
+        f"target_is_{model.lower()}",
+        "no_other_chi_measurement_running",
+        "chi_desktop_closed",
+        "internal_dummy_cell_connected",
+        "external_sample_disconnected",
+        "electrode_leads_verified",
+        "cell_output_confirmed_off",
+    )
+
+
+def validate_cv_commissioning_plan(
+    plan: Any,
+    *,
+    expected_target_model: str | None = None,
+) -> dict[str, Any]:
     """Normalize the one deliberately small CV supported for commissioning."""
 
     if not isinstance(plan, dict):
@@ -150,13 +181,18 @@ def validate_cv_commissioning_plan(plan: Any) -> dict[str, Any]:
         raise ValueError(f"unsupported CV commissioning fields: {', '.join(unknown)}")
     if missing:
         raise ValueError(f"missing CV commissioning fields: {', '.join(missing)}")
-    if plan["target_model"] != "760E":
-        raise ValueError("CV commissioning target_model must be 760E")
+    target_model = _commissioning_model(plan["target_model"])
+    if expected_target_model is not None:
+        expected = _commissioning_model(expected_target_model)
+        if target_model != expected:
+            raise ValueError(
+                f"CV commissioning target_model must match the loaded {expected} SDK"
+            )
     if plan["initial_scan_direction"] != "positive":
         raise ValueError("the first commissioning CV must use a positive initial scan")
 
     normalized: dict[str, Any] = {
-        "target_model": "760E",
+        "target_model": target_model,
         "initial_scan_direction": "positive",
     }
     for name in (
@@ -206,10 +242,17 @@ def validate_cv_commissioning_plan(plan: Any) -> dict[str, Any]:
     return normalized
 
 
-def cv_plan_to_sdk_parameters(plan: Any) -> dict[str, float]:
+def cv_plan_to_sdk_parameters(
+    plan: Any,
+    *,
+    expected_target_model: str | None = None,
+) -> dict[str, float]:
     """Map a validated plan to the properties listed by the vendor TestSDK."""
 
-    normalized = validate_cv_commissioning_plan(plan)
+    normalized = validate_cv_commissioning_plan(
+        plan,
+        expected_target_model=expected_target_model,
+    )
     return {
         "m_ei": normalized["initial_potential_v"],
         "m_eh": normalized["high_potential_v"],
@@ -629,10 +672,12 @@ class LiveCVRunner:
         runtime_directory: str | Path,
         *,
         dll_name: str = "libec760e.dll",
+        target_model: str = "760E",
     ) -> None:
         self.sdk_directory = sdk_directory
         self.runtime_directory = runtime_directory
         self.dll_name = dll_name
+        self.target_model = _commissioning_model(target_model)
         self._lock = threading.Lock()
         self._stop_function: Any = None
         self._abort_requested = threading.Event()
@@ -647,8 +692,14 @@ class LiveCVRunner:
             self._abort_requested.clear()
 
     def run(self, plan: Any) -> dict[str, Any]:
-        normalized = validate_cv_commissioning_plan(plan)
-        sdk_parameters = cv_plan_to_sdk_parameters(normalized)
+        normalized = validate_cv_commissioning_plan(
+            plan,
+            expected_target_model=self.target_model,
+        )
+        sdk_parameters = cv_plan_to_sdk_parameters(
+            normalized,
+            expected_target_model=self.target_model,
+        )
         preflight = inspect_runtime(
             self.sdk_directory,
             self.runtime_directory,
@@ -676,8 +727,8 @@ class LiveCVRunner:
         search_handles = []
         payload: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
-            "operation": "760e_cv_commissioning",
-            "target_model": "760E",
+            "operation": f"{self.target_model.lower()}_cv_commissioning",
+            "target_model": self.target_model,
             "plan": normalized,
             "sdk_parameters": sdk_parameters,
             "vendor_functions_called": 0,
@@ -745,9 +796,10 @@ class LiveCVRunner:
             get_model(model_buffer)
             model = model_buffer.value.decode("ascii", errors="replace").strip()
             payload["reported_model_series"] = model or None
-            if model.upper() != "760E":
+            if model.upper() not in SDK_MODEL_SERIES_ALIASES[self.target_model]:
                 raise RuntimeError(
-                    f"loaded SDK reported {model or 'no model'} instead of 760E"
+                    f"loaded SDK reported {model or 'no model'} instead of "
+                    f"{self.target_model}"
                 )
 
             payload["vendor_functions_called"] += 1
@@ -894,10 +946,11 @@ class LiveCVRunner:
 
 
 class CVCommissioningJobManager:
-    """Own the worker's single asynchronous 760E commissioning job."""
+    """Own one asynchronous, model-bound SDK commissioning job."""
 
-    def __init__(self, runner: Any) -> None:
+    def __init__(self, runner: Any, *, target_model: str = "760E") -> None:
         self.runner = runner
+        self.target_model = _commissioning_model(target_model)
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._job_id: str | None = None
@@ -908,11 +961,16 @@ class CVCommissioningJobManager:
         self._stop_requested = False
 
     def start(self, plan: Any, confirmations: Any) -> dict[str, Any]:
-        normalized = validate_cv_commissioning_plan(plan)
+        normalized = validate_cv_commissioning_plan(
+            plan,
+            expected_target_model=self.target_model,
+        )
         self._validate_confirmations(confirmations)
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
-                raise ValueError("a 760E commissioning job is already active")
+                raise ValueError(
+                    f"a {self.target_model} commissioning job is already active"
+                )
             reset_stop = getattr(self.runner, "reset_stop", None)
             if callable(reset_stop):
                 reset_stop()
@@ -925,11 +983,15 @@ class CVCommissioningJobManager:
             job_id = self._job_id
             self._thread = threading.Thread(
                 target=self._run,
-                name="chi760e-cv-commissioning",
+                name=f"chi{self.target_model.lower()}-cv-commissioning",
                 daemon=True,
             )
             self._thread.start()
-        return {"job_id": job_id, "state": "starting", "target_model": "760E"}
+        return {
+            "job_id": job_id,
+            "state": "starting",
+            "target_model": self.target_model,
+        }
 
     def status(self, job_id: Any = None) -> dict[str, Any]:
         with self._lock:
@@ -942,7 +1004,7 @@ class CVCommissioningJobManager:
             return {
                 "job_id": self._job_id,
                 "state": self._state,
-                "target_model": "760E",
+                "target_model": self.target_model,
                 "plan": dict(self._plan) if self._plan is not None else None,
                 "data_points": data_points,
                 "result_available": self._result is not None,
@@ -954,7 +1016,9 @@ class CVCommissioningJobManager:
         with self._lock:
             self._require_job(job_id)
             if self._state not in {"starting", "running", "stopping"}:
-                raise ValueError("the 760E commissioning job is not active")
+                raise ValueError(
+                    f"the {self.target_model} commissioning job is not active"
+                )
             self._stop_requested = True
             self._state = "stopping"
         self.runner.stop()
@@ -1025,17 +1089,22 @@ class CVCommissioningJobManager:
 
     def _require_job(self, job_id: Any) -> None:
         if self._job_id is None:
-            raise ValueError("no 760E commissioning job has been started")
+            raise ValueError(
+                f"no {self.target_model} commissioning job has been started"
+            )
         if job_id is not None and job_id != self._job_id:
-            raise ValueError("760E commissioning job id does not match")
+            raise ValueError(
+                f"{self.target_model} commissioning job id does not match"
+            )
 
-    @staticmethod
-    def _validate_confirmations(confirmations: Any) -> None:
+    def _validate_confirmations(self, confirmations: Any) -> None:
         if not isinstance(confirmations, dict) or not all(
             confirmations.get(name) is True
-            for name in CV_COMMISSIONING_CONFIRMATIONS
+            for name in _commissioning_confirmations(self.target_model)
         ):
-            raise ValueError("all local 760E commissioning confirmations are required")
+            raise ValueError(
+                f"all local {self.target_model} commissioning confirmations are required"
+            )
 
 
 def serve_requests(
@@ -1044,6 +1113,7 @@ def serve_requests(
     *,
     dll_name: str = "libec760e.dll",
     enable_chi760e_commissioning: bool = False,
+    enable_chi760b_commissioning: bool = False,
     commissioning_jobs: CVCommissioningJobManager | None = None,
     input_stream: Any = None,
     output_stream: Any = None,
@@ -1052,6 +1122,14 @@ def serve_requests(
 
     source = sys.stdin if input_stream is None else input_stream
     destination = sys.stdout if output_stream is None else output_stream
+    if enable_chi760e_commissioning and enable_chi760b_commissioning:
+        raise ValueError("only one SDK commissioning target may be enabled")
+    commissioning_target_model = (
+        "760B" if enable_chi760b_commissioning else "760E"
+    )
+    commissioning_enabled = bool(
+        enable_chi760e_commissioning or enable_chi760b_commissioning
+    )
     jobs = commissioning_jobs
     if jobs is None:
         jobs = CVCommissioningJobManager(
@@ -1059,7 +1137,9 @@ def serve_requests(
                 sdk_directory,
                 runtime_directory,
                 dll_name=dll_name,
-            )
+                target_model=commissioning_target_model,
+            ),
+            target_model=commissioning_target_model,
         )
     for raw_line in source:
         request_id: Any = None
@@ -1081,10 +1161,13 @@ def serve_requests(
                     sdk_directory, runtime_directory, dll_name=dll_name
                 )
                 result["commissioning_mode_enabled"] = bool(
-                    enable_chi760e_commissioning
+                    commissioning_enabled
+                )
+                result["commissioning_target_model"] = (
+                    commissioning_target_model if commissioning_enabled else None
                 )
                 result["experiments_enabled"] = bool(
-                    enable_chi760e_commissioning
+                    commissioning_enabled
                     and result["ready_to_load"]
                     and not result["missing_commissioning_exports"]
                 )
@@ -1112,20 +1195,20 @@ def serve_requests(
                     sdk_directory, runtime_directory, dll_name=dll_name
                 )
             elif command == "cv-start":
-                if not enable_chi760e_commissioning:
-                    raise ValueError("760E commissioning is disabled for this worker")
+                if not commissioning_enabled:
+                    raise ValueError("SDK commissioning is disabled for this worker")
                 result = jobs.start(request.get("plan"), request.get("confirmations"))
             elif command == "cv-status":
-                if not enable_chi760e_commissioning:
-                    raise ValueError("760E commissioning is disabled for this worker")
+                if not commissioning_enabled:
+                    raise ValueError("SDK commissioning is disabled for this worker")
                 result = jobs.status(request.get("job_id"))
             elif command == "cv-stop":
-                if not enable_chi760e_commissioning:
-                    raise ValueError("760E commissioning is disabled for this worker")
+                if not commissioning_enabled:
+                    raise ValueError("SDK commissioning is disabled for this worker")
                 result = jobs.stop(request.get("job_id"))
             elif command == "cv-result":
-                if not enable_chi760e_commissioning:
-                    raise ValueError("760E commissioning is disabled for this worker")
+                if not commissioning_enabled:
+                    raise ValueError("SDK commissioning is disabled for this worker")
                 result = jobs.result_page(
                     request.get("job_id"),
                     request.get("offset", 0),
@@ -1213,12 +1296,21 @@ def build_parser() -> argparse.ArgumentParser:
         child.add_argument("--dll-name", default="libec760e.dll")
         if command == "serve":
             child.add_argument("--parent-pid", type=int)
-            child.add_argument(
+            commissioning = child.add_mutually_exclusive_group()
+            commissioning.add_argument(
                 "--enable-chi760e-commissioning",
                 action="store_true",
                 help=(
                     "Expose bounded CV job commands; every start still requires "
                     "the complete local safety confirmation set."
+                ),
+            )
+            commissioning.add_argument(
+                "--enable-chi760b-commissioning",
+                action="store_true",
+                help=(
+                    "Expose one bounded CHI 760B internal-dummy CV; every start "
+                    "still requires the complete local safety confirmation set."
                 ),
             )
         if command == "load-check":
@@ -1251,6 +1343,9 @@ def main(argv: list[str] | None = None) -> int:
             dll_name=arguments.dll_name,
             enable_chi760e_commissioning=(
                 arguments.enable_chi760e_commissioning
+            ),
+            enable_chi760b_commissioning=(
+                arguments.enable_chi760b_commissioning
             ),
         )
     if arguments.command == "status":

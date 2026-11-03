@@ -159,6 +159,55 @@ test("760E controls use only the fixed authenticated loopback API", async () => 
   });
 });
 
+test("760B controls use only the fixed authenticated loopback API", async () => {
+  const requests = [];
+  const client = new BridgeClient({
+    token: "A_secure_test_token_123456789",
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    },
+  });
+  const plan = { target_model: "760B", initial_potential_v: 0 };
+  const confirmations = { target_is_760b: true };
+
+  await client.prepareSDKDummyCV("760B", plan, "First 760B CV");
+  await client.startSDKDummyCV("760B", "prepared-token", confirmations);
+  await client.statusSDKDummyCV("760B", "job-760b");
+  await client.stopSDKDummyCV("760B", "job-760b");
+  await client.resultSDKDummyCV("760B", "job-760b", 5, 10);
+
+  assert.deepEqual(requests.map((request) => request.url), [
+    "http://127.0.0.1:8765/v1/instrument/760b/prepare",
+    "http://127.0.0.1:8765/v1/instrument/760b/start",
+    "http://127.0.0.1:8765/v1/instrument/760b/status",
+    "http://127.0.0.1:8765/v1/instrument/760b/stop",
+    "http://127.0.0.1:8765/v1/instrument/760b/result",
+  ]);
+  assert.deepEqual(JSON.parse(requests[0].options.body), {
+    plan,
+    task_name: "First 760B CV",
+  });
+  assert.deepEqual(JSON.parse(requests[1].options.body), {
+    preparation_token: "prepared-token",
+    confirmations,
+  });
+  assert.deepEqual(JSON.parse(requests[4].options.body), {
+    job_id: "job-760b",
+    offset: 5,
+    limit: 10,
+  });
+});
+
+test("SDK controls reject arbitrary instrument route segments", () => {
+  const client = new BridgeClient({ token: "A_secure_test_token_123456789" });
+
+  assert.throws(
+    () => client.sdkCommissioningPath("760D", "start"),
+    (error) => error instanceof BridgeClientError && error.code === "invalid_instrument",
+  );
+});
+
 test("simulation storage uses only authenticated loopback endpoints", async () => {
   const requests = [];
   const client = new BridgeClient({

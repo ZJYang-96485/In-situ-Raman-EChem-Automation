@@ -136,39 +136,70 @@
       });
     }
 
-    prepare760EDummyCV(plan, taskName) {
-      return this.request("/v1/instrument/760e/prepare", {
+    sdkCommissioningPath(model, action) {
+      const normalized = String(model || "").toUpperCase();
+      if (!["760B", "760E"].includes(normalized)) {
+        throw new BridgeClientError(
+          "SDK commissioning is available only for CHI 760B or CHI 760E.",
+          "invalid_instrument",
+        );
+      }
+      return `/v1/instrument/${normalized.toLowerCase()}/${action}`;
+    }
+
+    prepareSDKDummyCV(model, plan, taskName) {
+      return this.request(this.sdkCommissioningPath(model, "prepare"), {
         method: "POST",
         body: { plan, task_name: taskName },
       });
     }
 
-    start760EDummyCV(preparationToken, confirmations) {
-      return this.request("/v1/instrument/760e/start", {
+    startSDKDummyCV(model, preparationToken, confirmations) {
+      return this.request(this.sdkCommissioningPath(model, "start"), {
         method: "POST",
         body: { preparation_token: preparationToken, confirmations },
       });
     }
 
-    status760EDummyCV(jobId) {
-      return this.request("/v1/instrument/760e/status", {
+    statusSDKDummyCV(model, jobId) {
+      return this.request(this.sdkCommissioningPath(model, "status"), {
         method: "POST",
         body: { job_id: jobId },
       });
     }
 
-    stop760EDummyCV(jobId) {
-      return this.request("/v1/instrument/760e/stop", {
+    stopSDKDummyCV(model, jobId) {
+      return this.request(this.sdkCommissioningPath(model, "stop"), {
         method: "POST",
         body: { job_id: jobId },
       });
     }
 
-    result760EDummyCV(jobId, offset = 0, limit = 4096) {
-      return this.request("/v1/instrument/760e/result", {
+    resultSDKDummyCV(model, jobId, offset = 0, limit = 4096) {
+      return this.request(this.sdkCommissioningPath(model, "result"), {
         method: "POST",
         body: { job_id: jobId, offset, limit },
       });
+    }
+
+    prepare760EDummyCV(plan, taskName) {
+      return this.prepareSDKDummyCV("760E", plan, taskName);
+    }
+
+    start760EDummyCV(preparationToken, confirmations) {
+      return this.startSDKDummyCV("760E", preparationToken, confirmations);
+    }
+
+    status760EDummyCV(jobId) {
+      return this.statusSDKDummyCV("760E", jobId);
+    }
+
+    stop760EDummyCV(jobId) {
+      return this.stopSDKDummyCV("760E", jobId);
+    }
+
+    result760EDummyCV(jobId, offset = 0, limit = 4096) {
+      return this.resultSDKDummyCV("760E", jobId, offset, limit);
     }
 
     prepare760DDummyCV(protocol) {

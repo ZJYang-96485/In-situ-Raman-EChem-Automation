@@ -39,6 +39,19 @@ REQUIRED_760E_COMMISSIONING_CONFIRMATIONS = frozenset(
         "cell_output_confirmed_off",
     }
 )
+REQUIRED_760B_COMMISSIONING_CONFIRMATIONS = frozenset(
+    {
+        "commissioning_approved",
+        "target_is_760b",
+        "no_other_chi_measurement_running",
+        "chi_desktop_closed",
+        "internal_dummy_cell_connected",
+        "external_sample_disconnected",
+        "electrode_leads_verified",
+        "cell_output_confirmed_off",
+    }
+)
+SUPPORTED_SDK_COMMISSIONING_MODELS = frozenset({"760B", "760E"})
 _CV_PLAN_FIELDS = frozenset(
     {
         "target_model",
@@ -59,7 +72,7 @@ class WorkerProtocolError(VendorCallError):
 
 
 class CHI760ECommissioningError(ValueError):
-    """Raised when a 760E commissioning request fails before worker dispatch."""
+    """Raised when a bounded 760B/760E request fails before worker dispatch."""
 
 
 @dataclass(frozen=True)
@@ -72,8 +85,11 @@ class WorkerLaunchConfig:
     runtime_directory: Path
     dll_name: str = "libec760e.dll"
     enable_chi760e_commissioning: bool = False
+    enable_chi760b_commissioning: bool = False
 
     def command(self) -> list[str]:
+        if self.enable_chi760e_commissioning and self.enable_chi760b_commissioning:
+            raise ValueError("only one SDK commissioning target may be enabled")
         command = [
             str(self.python_executable),
             "-u",
@@ -90,6 +106,8 @@ class WorkerLaunchConfig:
         ]
         if self.enable_chi760e_commissioning:
             command.append("--enable-chi760e-commissioning")
+        if self.enable_chi760b_commissioning:
+            command.append("--enable-chi760b-commissioning")
         return command
 
 
@@ -473,8 +491,13 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         worker: WorkerClient,
         *,
         target: str = "CHI 760E SDK",
+        target_model: str = "760E",
         execution_enabled: bool = False,
     ) -> None:
+        normalized_target = target_model.strip().upper()
+        if normalized_target not in SUPPORTED_SDK_COMMISSIONING_MODELS:
+            raise ValueError("SDK commissioning target must be 760B or 760E")
+        self.target_model = normalized_target
         self.execution_enabled = execution_enabled
         self._commissioning_lock = threading.RLock()
         self._prepared: dict[str, Prepared760ECVRun] = {}
@@ -488,13 +511,16 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         blocker = status.get("blocker")
         if blocker is None and not ready:
             if not self.execution_enabled:
-                blocker = "The 760E commissioning mode was not enabled at bridge start."
+                blocker = (
+                    f"The {self.target_model} commissioning mode was not enabled "
+                    "at bridge start."
+                )
             elif self._status.get("commissioning_mode_enabled") is not True:
                 blocker = "The 32-bit worker commissioning mode is locked."
             else:
                 blocker = str(
                     self._status.get("error")
-                    or "The 760E worker did not pass commissioning preflight."
+                    or f"The {self.target_model} worker did not pass commissioning preflight."
                 )
         status.update(
             {
@@ -508,6 +534,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
                     else status["state"]
                 ),
                 "experiment_control_enabled": ready,
+                "commissioning_target_model": self.target_model,
                 "experiment_scope": "internal_dummy_bounded_cv",
                 "remote_stop_available": ready,
                 "blocker": None if ready else blocker,
@@ -527,20 +554,22 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         task_name: str,
     ) -> dict[str, Any]:
         self._require_commissioning_ready()
-        normalized = _normalize_760e_cv_plan(plan)
+        normalized = _normalize_sdk_cv_plan(plan, self.target_model)
         root = Path(data_root).expanduser()
         if not root.is_absolute() or not root.is_dir():
             raise CHI760ECommissioningError(
-                "Choose an available storage folder before preparing the 760E CV."
+                f"Choose an available storage folder before preparing the {self.target_model} CV."
             )
         with self._commissioning_lock:
             if self._prepared:
                 raise CHI760ECommissioningError(
-                    "An unused 760E preparation already exists; restart the bridge to discard it."
+                    f"An unused {self.target_model} preparation already exists; "
+                    "restart the bridge to discard it."
                 )
             if self._active is not None and not self._active.finalized:
                 raise CHI760ECommissioningError(
-                    "A 760E commissioning run is already active or awaiting finalization."
+                    f"A {self.target_model} commissioning run is already active "
+                    "or awaiting finalization."
                 )
             store = RunDataStore(root)
             store.ensure_layout()
@@ -556,7 +585,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             writer.write_protocol_once(
                 {
                     "schema_version": "0.1",
-                    "target_model": "760E",
+                    "target_model": self.target_model,
                     "task_name": normalized_task_name,
                     "commissioning_plan": normalized,
                 }
@@ -571,7 +600,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             )
             writer.append_instrument_trace(
                 {
-                    "operation": "prepare_chi760e_internal_dummy_cv",
+                    "operation": f"prepare_chi{self.target_model.lower()}_internal_dummy_cv",
                     "prepared_at": prepared.prepared_at.isoformat(),
                     "worker_command_sent": False,
                     "scope": "internal_dummy_bounded_cv",
@@ -593,7 +622,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             prepared = self._prepared.get(preparation_token)
             if prepared is None:
                 raise CHI760ECommissioningError(
-                    "The prepared 760E run is missing or already used."
+                    f"The prepared {self.target_model} run is missing or already used."
                 )
             return {
                 "run_label": prepared.writer.paths.directory.name,
@@ -609,22 +638,23 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         self._require_commissioning_ready()
         missing = sorted(
             name
-            for name in REQUIRED_760E_COMMISSIONING_CONFIRMATIONS
+            for name in _required_commissioning_confirmations(self.target_model)
             if confirmations.get(name) is not True
         )
         if missing:
             raise CHI760ECommissioningError(
-                f"Missing 760E commissioning confirmations: {', '.join(missing)}."
+                f"Missing {self.target_model} commissioning confirmations: "
+                f"{', '.join(missing)}."
             )
         with self._commissioning_lock:
             prepared = self._prepared.pop(preparation_token, None)
             if prepared is None:
                 raise CHI760ECommissioningError(
-                    "The prepared 760E run is missing or already used."
+                    f"The prepared {self.target_model} run is missing or already used."
                 )
             if self._active is not None and not self._active.finalized:
                 raise CHI760ECommissioningError(
-                    "A 760E commissioning run is already active."
+                    f"A {self.target_model} commissioning run is already active."
                 )
             started_at = datetime.now(timezone.utc).isoformat()
             prepared.started_at = started_at
@@ -655,7 +685,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
                 )
                 prepared.writer.append_instrument_trace(
                     {
-                        "operation": "start_chi760e_internal_dummy_cv",
+                        "operation": f"start_chi{self.target_model.lower()}_internal_dummy_cv",
                         "started_at": started_at,
                         "job_id": job_id,
                         "scope": "internal_dummy_bounded_cv",
@@ -672,7 +702,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
                 )
                 prepared.writer.append_instrument_trace(
                     {
-                        "operation": "start_chi760e_internal_dummy_cv_failed",
+                        "operation": f"start_chi{self.target_model.lower()}_internal_dummy_cv_failed",
                         "failed_at": datetime.now(timezone.utc).isoformat(),
                         "error": str(error),
                     }
@@ -724,7 +754,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             self._last_job_status = public
             prepared.writer.append_instrument_trace(
                 {
-                    "operation": "stop_chi760e_internal_dummy_cv",
+                    "operation": f"stop_chi{self.target_model.lower()}_internal_dummy_cv",
                     "requested_at": datetime.now(timezone.utc).isoformat(),
                     "job_id": job_id,
                 }
@@ -734,11 +764,11 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
     def result_page(self, job_id: str, offset: int, limit: int) -> dict[str, Any]:
         if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
             raise CHI760ECommissioningError(
-                "760E result offset must be a non-negative integer."
+                f"{self.target_model} result offset must be a non-negative integer."
             )
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 4096:
             raise CHI760ECommissioningError(
-                "760E result limit must be an integer from 1 to 4096."
+                f"{self.target_model} result limit must be an integer from 1 to 4096."
             )
         with self._commissioning_lock:
             prepared = self._require_active_job(job_id)
@@ -758,6 +788,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             self.execution_enabled
             and self._ready()
             and self._status.get("commissioning_mode_enabled") is True
+            and self._status.get("commissioning_target_model") == self.target_model
             and self._status.get("experiments_enabled") is True
             and not self._status.get("missing_commissioning_exports")
         )
@@ -766,15 +797,21 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         if not self._commissioning_ready():
             blocker = self.public_status().get("blocker")
             raise CHI760ECommissioningError(
-                str(blocker) if blocker else "760E commissioning is locked."
+                str(blocker)
+                if blocker
+                else f"{self.target_model} commissioning is locked."
             )
 
     def _require_active_job(self, job_id: str) -> Prepared760ECVRun:
         if not isinstance(job_id, str) or not job_id:
-            raise CHI760ECommissioningError("A 760E job id is required.")
+            raise CHI760ECommissioningError(
+                f"A {self.target_model} job id is required."
+            )
         prepared = self._active
         if prepared is None or prepared.job_id != job_id:
-            raise CHI760ECommissioningError("The 760E job id does not match.")
+            raise CHI760ECommissioningError(
+                f"The {self.target_model} job id does not match."
+            )
         return prepared
 
     def _finalize(
@@ -810,7 +847,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         prepared.writer.write_metadata(metadata)
         prepared.writer.append_instrument_trace(
             {
-                "operation": "finalize_chi760e_internal_dummy_cv",
+                "operation": f"finalize_chi{self.target_model.lower()}_internal_dummy_cv",
                 "completed_at": completed_at,
                 "worker_state": state,
                 "state": metadata_state,
@@ -882,8 +919,8 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         prepared.writer.append_raw_output("".join(rows).encode("ascii"))
         return offset
 
-    @staticmethod
     def _metadata(
+        self,
         prepared: Prepared760ECVRun,
         *,
         state: str,
@@ -895,9 +932,9 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             "units": {"potential": "V", "current": "A"},
             "technique": "CV",
             "parameters": prepared.plan,
-            "software_version": "SpectraLoop-CHI760E-worker-0.1",
+            "software_version": f"SpectraLoop-CHI{self.target_model}-worker-0.1",
             "chi_identity": {
-                "model": "CHI 760E",
+                "model": f"CHI {self.target_model}",
                 "verification": "operator_confirmed_target_and_model_specific_sdk",
             },
             "state": state,
@@ -909,27 +946,43 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         return payload
 
 
-def _normalize_760e_cv_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
+def _required_commissioning_confirmations(target_model: str) -> frozenset[str]:
+    if target_model == "760B":
+        return REQUIRED_760B_COMMISSIONING_CONFIRMATIONS
+    if target_model == "760E":
+        return REQUIRED_760E_COMMISSIONING_CONFIRMATIONS
+    raise CHI760ECommissioningError("SDK commissioning target must be 760B or 760E.")
+
+
+def _normalize_sdk_cv_plan(
+    plan: Mapping[str, Any],
+    target_model: str,
+) -> dict[str, Any]:
+    model = target_model.strip().upper()
+    if model not in SUPPORTED_SDK_COMMISSIONING_MODELS:
+        raise CHI760ECommissioningError("SDK commissioning target must be 760B or 760E.")
     if not isinstance(plan, Mapping):
-        raise CHI760ECommissioningError("The 760E CV plan must be an object.")
+        raise CHI760ECommissioningError(f"The {model} CV plan must be an object.")
     unknown = sorted(set(plan) - _CV_PLAN_FIELDS)
     missing = sorted(_CV_PLAN_FIELDS - set(plan))
     if unknown:
         raise CHI760ECommissioningError(
-            f"Unsupported 760E CV fields: {', '.join(unknown)}."
+            f"Unsupported {model} CV fields: {', '.join(unknown)}."
         )
     if missing:
         raise CHI760ECommissioningError(
-            f"Missing 760E CV fields: {', '.join(missing)}."
+            f"Missing {model} CV fields: {', '.join(missing)}."
         )
-    if plan.get("target_model") != "760E":
-        raise CHI760ECommissioningError("The commissioning target must be 760E.")
+    if plan.get("target_model") != model:
+        raise CHI760ECommissioningError(
+            f"The commissioning target must match the loaded {model} SDK."
+        )
     if plan.get("initial_scan_direction") != "positive":
         raise CHI760ECommissioningError(
-            "The first 760E commissioning CV must scan positive initially."
+            f"The first {model} commissioning CV must scan positive initially."
         )
     normalized: dict[str, Any] = {
-        "target_model": "760E",
+        "target_model": model,
         "initial_scan_direction": "positive",
     }
     for name in (
@@ -955,7 +1008,7 @@ def _normalize_760e_cv_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
     segments = plan.get("sweep_segments")
     if isinstance(segments, bool) or not isinstance(segments, int) or segments != 2:
         raise CHI760ECommissioningError(
-            "The first 760E commissioning CV must use exactly two sweeps."
+            f"The first {model} commissioning CV must use exactly two sweeps."
         )
     normalized["sweep_segments"] = segments
     if any(
@@ -963,7 +1016,7 @@ def _normalize_760e_cv_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
         for name in ("initial_potential_v", "high_potential_v", "low_potential_v")
     ):
         raise CHI760ECommissioningError(
-            "The first 760E commissioning CV must stay within +/-0.25 V."
+            f"The first {model} commissioning CV must stay within +/-0.25 V."
         )
     if not (
         normalized["low_potential_v"]
@@ -975,14 +1028,14 @@ def _normalize_760e_cv_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
         )
     if not 0.01 <= normalized["scan_rate_v_s"] <= 0.2:
         raise CHI760ECommissioningError(
-            "760E commissioning scan rate must be from 0.01 to 0.2 V/s."
+            f"{model} commissioning scan rate must be from 0.01 to 0.2 V/s."
         )
     if not 0.001 <= normalized["potential_step_v"] <= 0.01:
         raise CHI760ECommissioningError(
-            "760E commissioning potential step must be from 0.001 to 0.01 V."
+            f"{model} commissioning potential step must be from 0.001 to 0.01 V."
         )
     if not 0.0 <= normalized["quiet_time_s"] <= 10.0:
         raise CHI760ECommissioningError(
-            "760E commissioning quiet time must be from 0 to 10 seconds."
+            f"{model} commissioning quiet time must be from 0 to 10 seconds."
         )
     return normalized
