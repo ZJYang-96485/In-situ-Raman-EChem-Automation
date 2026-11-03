@@ -23,6 +23,7 @@ from typing import Any, Mapping, Protocol
 
 from .data_store import RunDataStore, RunWriter
 from .errors import VendorCallError, VendorCallTimeoutError
+from .sdk_worker import validate_sequence_plan
 
 
 WORKER_PROTOCOL_VERSION = "0.1"
@@ -45,10 +46,10 @@ REQUIRED_760B_COMMISSIONING_CONFIRMATIONS = frozenset(
         "target_is_760b",
         "no_other_chi_measurement_running",
         "chi_desktop_closed",
-        "internal_dummy_cell_connected",
-        "external_sample_disconnected",
+        "cell_setup_reviewed",
         "electrode_leads_verified",
         "cell_output_confirmed_off",
+        "protocol_parameters_reviewed",
     }
 )
 SUPPORTED_SDK_COMMISSIONING_MODELS = frozenset({"760B", "760E"})
@@ -478,13 +479,14 @@ class Prepared760ECVRun:
     plan: dict[str, Any]
     writer: RunWriter
     prepared_at: datetime
+    execution_mode: str = "cv"
     started_at: str | None = None
     job_id: str | None = None
     finalized: bool = False
 
 
 class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
-    """Bridge-facing controller for one explicitly enabled internal-dummy CV."""
+    """Bridge-facing controller for validated SDK experiments."""
 
     def __init__(
         self,
@@ -535,7 +537,11 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
                 ),
                 "experiment_control_enabled": ready,
                 "commissioning_target_model": self.target_model,
-                "experiment_scope": "internal_dummy_bounded_cv",
+                "experiment_scope": (
+                    "validated_760b_sequence"
+                    if self.target_model == "760B"
+                    else "internal_dummy_bounded_cv"
+                ),
                 "remote_stop_available": ready,
                 "blocker": None if ready else blocker,
                 "active": (
@@ -554,7 +560,17 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         task_name: str,
     ) -> dict[str, Any]:
         self._require_commissioning_ready()
-        normalized = _normalize_sdk_cv_plan(plan, self.target_model)
+        execution_mode = "sequence" if "steps" in plan else "cv"
+        if execution_mode == "sequence":
+            try:
+                normalized = validate_sequence_plan(
+                    dict(plan),
+                    expected_target_model=self.target_model,
+                )
+            except ValueError as error:
+                raise CHI760ECommissioningError(str(error)) from error
+        else:
+            normalized = _normalize_sdk_cv_plan(plan, self.target_model)
         root = Path(data_root).expanduser()
         if not root.is_absolute() or not root.is_dir():
             raise CHI760ECommissioningError(
@@ -597,22 +613,29 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
                 plan=normalized,
                 writer=writer,
                 prepared_at=datetime.now(timezone.utc),
+                execution_mode=execution_mode,
             )
             writer.append_instrument_trace(
                 {
                     "operation": f"prepare_chi{self.target_model.lower()}_internal_dummy_cv",
                     "prepared_at": prepared.prepared_at.isoformat(),
                     "worker_command_sent": False,
-                    "scope": "internal_dummy_bounded_cv",
+                    "scope": (
+                        "validated_protocol_sequence"
+                        if execution_mode == "sequence"
+                        else "internal_dummy_bounded_cv"
+                    ),
                 }
             )
             self._prepared[token] = prepared
         return {
             "preparation_token": token,
             "run_label": writer.paths.directory.name,
+            "folder": "/".join(writer.paths.directory.parts[-4:]),
             "task_name": normalized_task_name,
             "task_folder": writer.paths.directory.parent.name,
             "summary": dict(normalized),
+            "execution_mode": execution_mode,
             "requires_local_approval": True,
             "remote_stop_available": True,
         }
@@ -662,7 +685,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             try:
                 result = dict(
                     self.worker.request(
-                        "cv-start",
+                        f"{prepared.execution_mode}-start",
                         payload={
                             "plan": prepared.plan,
                             "confirmations": dict(confirmations),
@@ -688,7 +711,11 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
                         "operation": f"start_chi{self.target_model.lower()}_internal_dummy_cv",
                         "started_at": started_at,
                         "job_id": job_id,
-                        "scope": "internal_dummy_bounded_cv",
+                        "scope": (
+                            "validated_protocol_sequence"
+                            if prepared.execution_mode == "sequence"
+                            else "internal_dummy_bounded_cv"
+                        ),
                     }
                 )
                 return {
@@ -715,7 +742,10 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         with self._commissioning_lock:
             prepared = self._require_active_job(job_id)
             result = dict(
-                self.worker.request("cv-status", payload={"job_id": job_id})
+                self.worker.request(
+                    f"{prepared.execution_mode}-status",
+                    payload={"job_id": job_id},
+                )
             )
             state = result.get("state")
             if state not in {
@@ -730,6 +760,7 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             public = {
                 **result,
                 "run_label": prepared.writer.paths.directory.name,
+                "folder": "/".join(prepared.writer.paths.directory.parts[-4:]),
                 "data_saved": prepared.finalized,
             }
             self._last_job_status = public
@@ -744,11 +775,15 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             prepared = self._require_active_job(job_id)
             self.hardware_calls += 1
             result = dict(
-                self.worker.request("cv-stop", payload={"job_id": job_id})
+                self.worker.request(
+                    f"{prepared.execution_mode}-stop",
+                    payload={"job_id": job_id},
+                )
             )
             public = {
                 **result,
                 "run_label": prepared.writer.paths.directory.name,
+                "folder": "/".join(prepared.writer.paths.directory.parts[-4:]),
                 "remote_stop_available": True,
             }
             self._last_job_status = public
@@ -774,13 +809,14 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
             prepared = self._require_active_job(job_id)
             result = dict(
                 self.worker.request(
-                    "cv-result",
+                    f"{prepared.execution_mode}-result",
                     payload={"job_id": job_id, "offset": offset, "limit": limit},
                 )
             )
             return {
                 **result,
                 "run_label": prepared.writer.paths.directory.name,
+                "folder": "/".join(prepared.writer.paths.directory.parts[-4:]),
             }
 
     def _commissioning_ready(self) -> bool:
@@ -860,6 +896,8 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
     def _save_result(self, prepared: Prepared760ECVRun) -> int:
         if prepared.job_id is None:
             raise ValueError("The prepared run has no worker job id.")
+        if prepared.execution_mode == "sequence":
+            return self._save_sequence_result(prepared)
         offset = 0
         expected_total: int | None = None
         rows = ["potential_V,current_A\n"]
@@ -919,6 +957,76 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         prepared.writer.append_raw_output("".join(rows).encode("ascii"))
         return offset
 
+    def _save_sequence_result(self, prepared: Prepared760ECVRun) -> int:
+        if prepared.job_id is None:
+            raise ValueError("The prepared run has no worker job id.")
+        offset = 0
+        expected_total: int | None = None
+        rows = ["step_index,technique,x_name,x_unit,x_value,current_A\n"]
+        while True:
+            requested_offset = offset
+            page = dict(
+                self.worker.request(
+                    "sequence-result",
+                    payload={
+                        "job_id": prepared.job_id,
+                        "offset": offset,
+                        "limit": 4096,
+                    },
+                )
+            )
+            page_rows = page.get("rows")
+            total = page.get("total")
+            next_offset = page.get("next_offset")
+            if not isinstance(page_rows, list):
+                raise ValueError("The worker returned malformed sequence data.")
+            if page.get("offset") != requested_offset or page.get("count") != len(page_rows):
+                raise ValueError("The worker returned inconsistent sequence page metadata.")
+            if isinstance(total, bool) or not isinstance(total, int) or not 0 <= total <= 2_000_000:
+                raise ValueError("The worker returned an invalid sequence result total.")
+            if expected_total is None:
+                expected_total = total
+            elif total != expected_total:
+                raise ValueError("The worker changed the sequence total between pages.")
+            for row in page_rows:
+                if not isinstance(row, Mapping):
+                    raise ValueError("The worker returned a malformed sequence row.")
+                step_index = row.get("step_index")
+                kind = row.get("kind")
+                x_value = row.get("x")
+                y_value = row.get("y")
+                x_unit = row.get("x_unit")
+                if (
+                    isinstance(step_index, bool)
+                    or not isinstance(step_index, int)
+                    or step_index < 1
+                    or kind not in {"cv", "it"}
+                    or x_unit not in {"V", "s"}
+                    or isinstance(x_value, bool)
+                    or isinstance(y_value, bool)
+                    or not isfinite(float(x_value))
+                    or not isfinite(float(y_value))
+                ):
+                    raise ValueError("The worker returned an invalid sequence row.")
+                x_name = "potential" if kind == "cv" else "time"
+                rows.append(
+                    f"{step_index},{kind},{x_name},{x_unit},{float(x_value):.9g},{float(y_value):.9g}\n"
+                )
+            offset += len(page_rows)
+            if next_offset is None:
+                break
+            if (
+                isinstance(next_offset, bool)
+                or not isinstance(next_offset, int)
+                or next_offset != offset
+                or next_offset <= requested_offset
+            ):
+                raise ValueError("The worker returned an invalid sequence result offset.")
+        if expected_total is None or offset != expected_total:
+            raise ValueError("The retrieved sequence result count did not match its total.")
+        prepared.writer.append_raw_output("".join(rows).encode("ascii"))
+        return offset
+
     def _metadata(
         self,
         prepared: Prepared760ECVRun,
@@ -929,8 +1037,16 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "started_at": prepared.started_at or prepared.prepared_at.isoformat(),
-            "units": {"potential": "V", "current": "A"},
-            "technique": "CV",
+            "units": (
+                {"x": "per-step V or s", "current": "A"}
+                if prepared.execution_mode == "sequence"
+                else {"potential": "V", "current": "A"}
+            ),
+            "technique": (
+                "760B protocol sequence"
+                if prepared.execution_mode == "sequence"
+                else "CV"
+            ),
             "parameters": prepared.plan,
             "software_version": f"SpectraLoop-CHI{self.target_model}-worker-0.1",
             "chi_identity": {

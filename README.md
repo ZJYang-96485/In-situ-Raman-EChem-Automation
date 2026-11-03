@@ -92,9 +92,10 @@ execution simulator driven by the current protocol. The simulator generates
 deterministic synchronized data and explicit fault states with zero hardware
 calls. Laser, trigger, physical iR, and automated decision actions remain
 unavailable. A loopback-only local bridge lets the setup page select a data
-folder using the Windows folder picker. Explicit launchers can enable only the
-matching bounded internal-dummy CV endpoint; all other experiment endpoints
-remain locked.
+folder using the Windows folder picker. The 760B launcher enables verified
+Wait/CV/amperometric i-t sequences directly from the existing Protocol Builder;
+the 760E and 760D launchers retain their separately gated commissioning paths.
+Unsupported techniques and unverified iR hardware application remain locked.
 
 On the instrument computer, double-click `Start SpectraLoop.cmd` for 760E,
 `Start SpectraLoop 760B.cmd` for 760B, or the separate 760D launcher; no VS Code

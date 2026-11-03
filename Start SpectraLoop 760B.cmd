@@ -27,7 +27,7 @@ if not exist "%SPECTRALOOP_ROOT%.runtime\python-x86\python.exe" goto runtime_mis
 :run_bridge
 pushd "%SPECTRALOOP_ROOT%CHI760 Potentiostat"
 if "%SPECTRALOOP_LOCAL_MODE%"=="1" goto run_local_bridge
-"%SPECTRALOOP_PYTHON%" %SPECTRALOOP_PYTHON_ARGS% -B -m chi760.web_bridge --site-dir "%SPECTRALOOP_ROOT%SpectraLoop" --start-page echem --web-url "https://spectraloop.org/echem.html?view=protocol&app=spectraloop-20261103-1" --sdk-dir "%SPECTRALOOP_760B_RUNTIME%" --runtime-dir "%SPECTRALOOP_760B_RUNTIME%" --dll-name "libec760b.dll" --instrument-label "CHI 760B SDK" --enable-chi760b-commissioning
+"%SPECTRALOOP_PYTHON%" %SPECTRALOOP_PYTHON_ARGS% -B -m chi760.web_bridge --site-dir "%SPECTRALOOP_ROOT%SpectraLoop" --start-page echem --web-url "https://spectraloop.org/echem.html?view=protocol&app=spectraloop-20261103-2" --sdk-dir "%SPECTRALOOP_760B_RUNTIME%" --runtime-dir "%SPECTRALOOP_760B_RUNTIME%" --dll-name "libec760b.dll" --instrument-label "CHI 760B SDK" --enable-chi760b-commissioning
 goto bridge_finished
 
 :run_local_bridge

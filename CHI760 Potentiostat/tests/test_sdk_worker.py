@@ -14,12 +14,15 @@ from chi760.sdk_worker import (
     REQUIRED_COMMISSIONING_EXPORTS,
     REQUIRED_DISCOVERY_EXPORTS,
     REQUIRED_RUNTIME_DLLS,
+    SequenceExperimentJobManager,
     build_parser,
     cv_plan_to_sdk_parameters,
     inspect_runtime,
+    it_plan_to_sdk_parameters,
     main,
     serve_requests,
     validate_cv_commissioning_plan,
+    validate_sequence_plan,
 )
 from contextlib import redirect_stdout
 from io import StringIO
@@ -42,6 +45,67 @@ def bounded_cv_plan(target_model: str = "760E") -> dict[str, object]:
 
 def commissioning_confirmations() -> dict[str, bool]:
     return {name: True for name in CV_COMMISSIONING_CONFIRMATIONS}
+
+
+def direct_760b_plan() -> dict[str, object]:
+    cv = bounded_cv_plan("760B")
+    cv.pop("target_model")
+    return {
+        "target_model": "760B",
+        "protocol_name": "760B CV and i-t",
+        "ir_compensation": {"enabled": False, "mode": "automatic"},
+        "steps": [
+            {"kind": "wait", "duration_s": 0.0},
+            {"kind": "cv", **cv},
+            {
+                "kind": "it",
+                "potential_v": 0.1,
+                "duration_s": 2.0,
+                "sample_period_s": 0.5,
+                "area_cm2": 1.0,
+                "quiet_time_s": 0.0,
+            },
+        ],
+    }
+
+
+def direct_760b_confirmations() -> dict[str, bool]:
+    return {
+        "commissioning_approved": True,
+        "target_is_760b": True,
+        "no_other_chi_measurement_running": True,
+        "chi_desktop_closed": True,
+        "cell_setup_reviewed": True,
+        "electrode_leads_verified": True,
+        "cell_output_confirmed_off": True,
+        "protocol_parameters_reviewed": True,
+    }
+
+
+class ImmediateSequenceRunner:
+    def __init__(self) -> None:
+        self.plans: list[dict[str, object]] = []
+        self.reset_calls = 0
+        self.stop_calls = 0
+
+    def reset_stop(self) -> None:
+        self.reset_calls += 1
+
+    def run(self, plan: dict[str, object]) -> dict[str, object]:
+        self.plans.append(plan)
+        return {
+            "completed_steps": 3,
+            "data_points": 3,
+            "stopped": False,
+            "steps": [
+                {"step_index": 1, "kind": "wait", "x_values": [], "y_values": [], "units": {"x": "s", "y": "A"}},
+                {"step_index": 2, "kind": "cv", "x_values": [-0.1, 0.1], "y_values": [-1e-6, 1e-6], "units": {"x": "V", "y": "A"}},
+                {"step_index": 3, "kind": "it", "x_values": [0.0], "y_values": [2e-6], "units": {"x": "s", "y": "A"}},
+            ],
+        }
+
+    def stop(self) -> None:
+        self.stop_calls += 1
 
 
 class ImmediateCVRunner:
@@ -434,6 +498,71 @@ class SDKWorkerTests(unittest.TestCase):
         self.assertEqual("760B", payload["result"]["target_model"])
         wait_for_job_state(manager, payload["result"]["job_id"], {"completed"})
         self.assertEqual("760B", runner.plans[0]["target_model"])
+
+    def test_direct_760b_sequence_validates_cv_it_and_preserves_ir_plan(self):
+        normalized = validate_sequence_plan(
+            direct_760b_plan(), expected_target_model="760B"
+        )
+        normalized = validate_sequence_plan(
+            normalized, expected_target_model="760B"
+        )
+        it_parameters = it_plan_to_sdk_parameters(
+            {key: value for key, value in normalized["steps"][2].items() if key != "kind"}
+        )
+
+        self.assertEqual(["wait", "cv", "it"], [step["kind"] for step in normalized["steps"]])
+        self.assertFalse(normalized["ir_compensation"]["enabled"])
+        self.assertEqual(
+            {"m_ei": 0.1, "m_inpsi": 0.5, "m_st": 2.0, "m_qt": 0.0},
+            it_parameters,
+        )
+
+        enabled_ir = direct_760b_plan()
+        enabled_ir["ir_compensation"] = {"enabled": True}
+        with self.assertRaisesRegex(ValueError, "iR compensation"):
+            validate_sequence_plan(enabled_ir, expected_target_model="760B")
+
+    def test_direct_sequence_job_pages_step_aware_results(self):
+        runner = ImmediateSequenceRunner()
+        manager = SequenceExperimentJobManager(runner, target_model="760B")
+
+        started = manager.start(direct_760b_plan(), direct_760b_confirmations())
+        status = wait_for_job_state(manager, str(started["job_id"]), {"completed"})
+        page = manager.result_page(str(started["job_id"]), 0, 10)
+
+        self.assertEqual(3, status["completed_steps"])
+        self.assertEqual(3, status["data_points"])
+        self.assertEqual([2, 2, 3], [row["step_index"] for row in page["rows"]])
+        self.assertEqual(["cv", "cv", "it"], [row["kind"] for row in page["rows"]])
+        self.assertEqual(1, runner.reset_calls)
+
+    def test_worker_routes_direct_sequence_only_to_injected_sequence_manager(self):
+        runner = ImmediateSequenceRunner()
+        manager = SequenceExperimentJobManager(runner, target_model="760B")
+        request = {
+            "schema_version": "0.1",
+            "id": 10,
+            "command": "sequence-start",
+            "plan": direct_760b_plan(),
+            "confirmations": direct_760b_confirmations(),
+        }
+        requests = StringIO(json.dumps(request) + "\n")
+        responses = StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            serve_requests(
+                directory,
+                directory,
+                enable_chi760b_commissioning=True,
+                commissioning_jobs=CVCommissioningJobManager(ImmediateCVRunner(), target_model="760B"),
+                sequence_jobs=manager,
+                input_stream=requests,
+                output_stream=responses,
+            )
+
+        payload = json.loads(responses.getvalue())
+        self.assertTrue(payload["ok"])
+        wait_for_job_state(manager, payload["result"]["job_id"], {"completed"})
+        self.assertEqual(1, len(runner.plans))
 
 
 if __name__ == "__main__":

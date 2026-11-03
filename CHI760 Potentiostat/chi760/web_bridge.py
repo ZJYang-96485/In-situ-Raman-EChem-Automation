@@ -60,7 +60,7 @@ from .worker_transport import (
 )
 
 
-BRIDGE_VERSION = "0.9.0"
+BRIDGE_VERSION = "0.10.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -347,6 +347,26 @@ def native_760e_experiment_approval(summary: Mapping[str, Any]) -> bool:
                 "The prepared SDK run has an unsupported target model.",
             )
         root.attributes("-topmost", True)
+        if target_model == "760B" and isinstance(summary.get("steps"), list):
+            step_summary = ", ".join(
+                f"{index + 1}. {str(step.get('kind', '')).upper()}"
+                for index, step in enumerate(summary["steps"])
+                if isinstance(step, Mapping)
+            )
+            return bool(
+                messagebox.askyesno(
+                    "Start CHI 760B protocol",
+                    "Allow this real CHI 760B experiment sequence?\n\n"
+                    f"Protocol: {summary.get('protocol_name')}\n"
+                    f"Steps: {step_summary}\n"
+                    f"Estimated duration: {summary.get('estimated_duration_s')} s\n\n"
+                    "Confirm the displayed protocol matches the prepared cell, no other "
+                    "CHI measurement is running, the CHI desktop is closed, and cell output "
+                    "is off before starting.",
+                    parent=root,
+                    icon="warning",
+                )
+            )
         return bool(
             messagebox.askyesno(
                 f"Start CHI {target_model} internal dummy CV",
@@ -473,8 +493,18 @@ class StorageSettings:
             candidate = Path(value)
             if not candidate.is_absolute():
                 raise ValueError("storage_root is not absolute")
-            self._root = candidate.resolve(strict=False)
-            self._source = "saved"
+            resolved = candidate.resolve(strict=False)
+            default = (
+                self.default_root.expanduser().resolve(strict=False)
+                if self.default_root is not None
+                else None
+            )
+            if default is not None and resolved == default / "runs":
+                self._root = default
+                self._source = "repository_default"
+            else:
+                self._root = resolved
+                self._source = "saved"
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
             self._root = None
             self._source = "none"
@@ -556,7 +586,9 @@ class BridgeState:
                 ),
                 "experiments_enabled": sdk_commissioning_enabled or chi760d_enabled,
                 "experiment_scope": (
-                    "internal_dummy_bounded_cv"
+                    "validated_wait_cv_it_sequence"
+                    if sdk_commissioning_enabled and sdk_target_model == "760B"
+                    else "internal_dummy_bounded_cv"
                     if sdk_commissioning_enabled
                     else "internal_dummy_bounded_cv_series"
                     if chi760d_enabled
@@ -983,7 +1015,7 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                     if not isinstance(confirmations, Mapping):
                         raise BridgeRequestError(
                             "confirmations_required",
-                            f"All {target_model} internal-dummy safety confirmations are required.",
+                            f"All {target_model} experiment confirmations are required.",
                         )
                     missing = sorted(
                         key
@@ -1481,7 +1513,7 @@ def main(argv: list[str] | None = None) -> int:
         "--enable-chi760b-commissioning",
         action="store_true",
         help=(
-            "Enable only the bounded CHI 760B internal-dummy CV worker workflow."
+            "Enable validated CHI 760B Wait/CV/amperometric i-t protocol execution."
         ),
     )
     parser.add_argument(
@@ -1560,8 +1592,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     elif args.enable_chi760b_commissioning:
         print(
-            "Mode: CHI 760B internal-dummy CV commissioning enabled; "
-            "all other experiments are locked"
+            "Mode: CHI 760B direct Wait/CV/amperometric i-t sequences enabled; "
+            "unsupported techniques and unverified iR control are locked"
         )
     elif args.enable_chi760d_dummy:
         print("Mode: CHI 760D internal-dummy CV/wait series enabled; external-cell experiments are locked")

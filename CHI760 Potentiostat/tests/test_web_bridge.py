@@ -457,6 +457,22 @@ class WebBridgeTests(unittest.TestCase):
         self.assertEqual(override.resolve(), settings.root)
         self.assertEqual("selected", settings.public_status()["source"])
 
+    def test_saved_repository_runs_folder_is_migrated_to_data_root(self) -> None:
+        data_root = Path(self.temporary.name) / "repository-data"
+        runs_root = data_root / "runs"
+        runs_root.mkdir(parents=True)
+        config = Path(self.temporary.name) / "migrated-settings" / "bridge.json"
+        config.parent.mkdir(parents=True)
+        config.write_text(
+            json.dumps({"schema_version": "0.1", "storage_root": str(runs_root)}),
+            encoding="utf-8",
+        )
+
+        settings = StorageSettings(config, default_root=data_root)
+
+        self.assertEqual(data_root.resolve(), settings.root)
+        self.assertEqual("repository_default", settings.public_status()["source"])
+
     def test_ec_only_simulation_is_saved_by_date_task_and_trial(self) -> None:
         with self.assertRaises(HTTPError) as caught:
             self.request(

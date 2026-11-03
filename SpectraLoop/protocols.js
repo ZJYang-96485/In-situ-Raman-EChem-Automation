@@ -468,7 +468,7 @@ function validatePlan(plan) {
   }
   const ir = plan.ir_compensation;
   if (ir.enabled && planModel !== "760E") {
-    errors.push(`iR compensation is not available in the documented ${planModel || "selected model"} automation profile.`);
+    warnings.push(`iR compensation settings are retained for CHI ${planModel || "the selected model"}, but direct hardware execution remains blocked until its SDK mapping is verified.`);
   }
   if (ir.target_compensation_fraction !== 0.95) errors.push("iR target compensation must remain fixed at 95%.");
   if (ir.max_compensation_trials !== 10) errors.push("The compensation trial ceiling must remain fixed at 10.");
@@ -633,7 +633,7 @@ function refreshTargetModelUI() {
 
   const irToggle = document.querySelector("#ir-enabled");
   if (targetModel !== "760E") irToggle.checked = false;
-  irToggle.disabled = targetModel !== "760E";
+  irToggle.disabled = false;
 
   const presetSelect = document.querySelector("#protocol-preset");
   Array.from(presetSelect.options).forEach((option) => {

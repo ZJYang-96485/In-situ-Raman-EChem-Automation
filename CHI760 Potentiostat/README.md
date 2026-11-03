@@ -3,8 +3,8 @@
 This module provides a connection-free, model-profiled planning surface for CH
 Instruments 760-series automation. The 760B and 760E SDK workers and the 760D
 desktop-macro commissioning path are separate, model-gated adapters. The 760B
-SDK path now supports one bounded internal-dummy CV commissioning workflow in
-addition to offline CV and amperometric i-t planning. See
+SDK path now runs validated Wait/CV/amperometric i-t sequences from the existing
+Protocol Builder, while 760E retains its bounded commissioning CV. See
 [`docs/chi760b-offline-commissioning.md`](docs/chi760b-offline-commissioning.md).
 
 ## Electrochemistry-only Windows node
@@ -86,8 +86,10 @@ override it without changing source code by setting
 By default, the persistent protocol permits only status, an explicitly
 acknowledged DLL load check, approved SDK capability discovery, and shutdown.
 An explicit, mutually exclusive `--enable-chi760e-commissioning` or
-`--enable-chi760b-commissioning` process flag adds asynchronous
-`cv-start`, `cv-status`, `cv-stop`, and paginated `cv-result` worker commands.
+`--enable-chi760b-commissioning` process flag adds asynchronous worker commands.
+760E uses `cv-start/status/stop/result`; 760B additionally uses
+`sequence-start/status/stop/result` for ordered Wait, CV, and amperometric i-t
+steps.
 Every start still requires the complete local safety confirmation set and a
 strict model-matched CV plan: +/-0.25 V, 0.01-0.2 V/s, 0.001-0.01 V step, no more
 than 10 seconds quiet time, positive initial scan, and exactly two sweeps. The
@@ -97,7 +99,7 @@ prepare, start, status, stop, and paginated-result routes. Preparation validates
 the plan and reserves an immutable local run directory without calling the
 worker. Start requires all browser confirmations plus a separate Windows
 approval. Terminal status retrieves and saves the result locally without
-returning the storage path. Each launcher enables only its matching model; the
+returning only the safe relative run folder. Each launcher enables only its matching model; the
 public page refuses control when the selected model and bridge target differ. The inspected
 CHI 760D desktop package contains no matching `libec760d.dll`; it cannot be
 selected through the 760E worker merely by renaming the executable or folder.

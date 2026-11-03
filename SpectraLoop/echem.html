@@ -3,11 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Build CHI 760B, 760D, and 760E protocols and inspect electrochemistry simulation data." />
+    <meta name="description" content="Build CHI 760-series protocols, run verified 760B experiments, and inspect electrochemistry data." />
     <title>SpectraLoop — Electrochemistry</title>
     <meta name="theme-color" content="#061b3b" />
     <link rel="icon" href="assets/favicon.png?v=2" type="image/png" sizes="512x512" />
-    <link rel="stylesheet" href="styles.css?v=echem-ec-only-2" />
+    <link rel="stylesheet" href="styles.css?v=echem-direct-run-1" />
   </head>
   <body>
     <main class="shell wide-shell">
@@ -69,44 +69,6 @@
         <aside class="safety-callout bridge-lock-note">
           <strong id="echem-execution-lock-title">Protocol execution is still locked.</strong>
           <span id="echem-execution-lock-detail">Connecting the bridge or checking SDK capabilities does not authorize OCP, EIS, CV, iR compensation, cell control, Raman, RDE, or any other experiment.</span>
-        </aside>
-      </section>
-
-      <section class="bridge-panel echem-bridge-panel" id="chi760e-runner-panel" aria-labelledby="chi760e-runner-heading" hidden>
-        <div class="bridge-heading">
-          <div>
-            <p class="eyebrow" id="chi-sdk-runner-eyebrow">CHI SDK CONTROL</p>
-            <h2 id="chi760e-runner-heading">Bounded internal dummy-cell CV</h2>
-            <p class="card-note" id="chi-sdk-runner-note">One two-sweep CV, within +/-0.25 V, using the current single-CV protocol. Results are saved in the local data folder.</p>
-          </div>
-          <strong id="chi760e-runner-state"><span class="status-dot amber"></span>Not checked</strong>
-        </div>
-        <p id="chi760e-runner-detail" class="bridge-check-status" role="status" aria-live="polite">Start the selected SDK control bridge to inspect readiness.</p>
-        <details class="bridge-discovery-details" id="chi760e-runner-details">
-          <summary>Review and authorize the real internal-dummy CV</summary>
-          <p class="card-note" id="chi-sdk-runner-instructions">Select the same CHI model as the local bridge, mark the bench available, build exactly one one-cycle CV, and disable iR compensation. Preparing validates the plan and reserves a unique run folder; it does not contact the instrument.</p>
-          <fieldset class="identity-confirmations" id="chi760e-run-confirmations" disabled>
-            <legend>Confirm immediately before starting</legend>
-            <label id="chi-sdk-target-confirmation-label"><input type="checkbox" data-chi-sdk-confirmation="target_is_selected_model" /> The connected instrument and installed SDK match the selected CHI model.</label>
-            <label><input type="checkbox" data-chi-sdk-confirmation="no_other_chi_measurement_running" /> No other CHI measurement is running.</label>
-            <label><input type="checkbox" data-chi-sdk-confirmation="chi_desktop_closed" /> The CHI desktop application is closed.</label>
-            <label><input type="checkbox" data-chi-sdk-confirmation="internal_dummy_cell_connected" /> The CHI internal dummy cell is selected and connected.</label>
-            <label><input type="checkbox" data-chi-sdk-confirmation="external_sample_disconnected" /> Every external sample is disconnected.</label>
-            <label><input type="checkbox" data-chi-sdk-confirmation="electrode_leads_verified" /> Electrode leads are verified for the internal dummy-cell setup.</label>
-            <label><input type="checkbox" data-chi-sdk-confirmation="cell_output_confirmed_off" /> CHI cell output is currently off.</label>
-          </fieldset>
-          <div class="bridge-actions">
-            <div class="button-row">
-              <button class="button secondary" id="chi760e-prepare-run" type="button" disabled>Prepare bounded CV</button>
-              <button class="button primary" id="chi760e-start-run" type="button" disabled>Start approved CV</button>
-              <button class="button ghost" id="chi760e-stop-run" type="button" disabled>Stop CV</button>
-            </div>
-            <p id="chi760e-run-action-status" class="card-note" role="status" aria-live="polite">No SDK CV has been prepared.</p>
-          </div>
-        </details>
-        <aside class="safety-callout bridge-lock-note">
-          <strong>Real hardware control is limited to this commissioning CV.</strong>
-          Starting still requires a separate approval in a local Windows dialog. Stop is sent through the documented CHI SDK, and cleanup requests cell off even after an error.
         </aside>
       </section>
 
@@ -275,10 +237,48 @@
           </details>
         </section>
 
-        <section class="simulation-runner" aria-labelledby="simulation-runner-title">
+        <section class="simulation-runner direct-runner" aria-labelledby="simulation-runner-title">
+          <div class="direct-runner-main" id="chi760e-runner-panel" hidden>
+            <div class="bridge-heading">
+              <div>
+                <p class="eyebrow" id="chi-sdk-runner-eyebrow">CHI SDK CONTROL</p>
+                <h2 id="simulation-runner-title">Run the current protocol</h2>
+                <p id="chi-sdk-runner-note">Execute the displayed 760B Wait, CV, and Amperometric i-t steps in order. Results are saved under data/runs/date/task/trial.</p>
+              </div>
+              <strong id="chi760e-runner-state"><span class="status-dot amber"></span>Not checked</strong>
+            </div>
+            <p id="chi760e-runner-detail" class="bridge-check-status" role="status" aria-live="polite">Start the selected SDK control bridge to inspect readiness.</p>
+            <details class="bridge-discovery-details" id="chi760e-runner-details" open>
+              <summary>Review and run this protocol</summary>
+              <p class="card-note" id="chi-sdk-runner-instructions">Mark the bench available and review the current sequence. Preparing validates every step and reserves a unique run folder without contacting the instrument.</p>
+              <fieldset class="identity-confirmations" id="chi760e-run-confirmations" disabled>
+                <legend>Confirm immediately before starting</legend>
+                <label id="chi-sdk-target-confirmation-label"><input type="checkbox" data-chi-sdk-confirmation="target_is_selected_model" /> The connected instrument and installed SDK match the selected CHI model.</label>
+                <label><input type="checkbox" data-chi-sdk-confirmation="no_other_chi_measurement_running" /> No other CHI measurement is running.</label>
+                <label><input type="checkbox" data-chi-sdk-confirmation="chi_desktop_closed" /> The CHI desktop application is closed.</label>
+                <label id="chi-sdk-cell-confirmation-label"><input type="checkbox" data-chi-sdk-confirmation="cell_setup_reviewed" /> The cell/sample setup is correct for this protocol.</label>
+                <label><input type="checkbox" data-chi-sdk-confirmation="electrode_leads_verified" /> Electrode leads are connected as intended.</label>
+                <label><input type="checkbox" data-chi-sdk-confirmation="cell_output_confirmed_off" /> CHI cell output is currently off.</label>
+                <label id="chi-sdk-protocol-confirmation-label"><input type="checkbox" data-chi-sdk-confirmation="protocol_parameters_reviewed" /> I reviewed every displayed potential, duration, sample interval, and sequence step.</label>
+              </fieldset>
+              <div class="bridge-actions">
+                <div class="button-row">
+                  <button class="button secondary" id="chi760e-prepare-run" type="button" disabled>Prepare current protocol</button>
+                  <button class="button primary" id="chi760e-start-run" type="button" disabled>Run on CHI 760B</button>
+                  <button class="button ghost" id="chi760e-stop-run" type="button" disabled>Stop experiment</button>
+                </div>
+                <p id="chi760e-run-action-status" class="card-note" role="status" aria-live="polite">No real protocol has been prepared.</p>
+              </div>
+            </details>
+            <aside class="safety-callout bridge-lock-note">
+              A separate local Windows approval is required at start. Stop uses the documented CHI SDK, and cleanup requests cell off after completion or error. iR settings remain part of the plan, but direct 760B execution is blocked while iR is enabled until its SDK mapping is verified.
+            </aside>
+          </div>
+          <details class="simulation-option">
+            <summary>Preview without hardware</summary>
           <div>
             <p class="eyebrow">CONNECTION-FREE EXECUTION</p>
-            <h2 id="simulation-runner-title">Run the current protocol</h2>
+            <h2>Simulation preview</h2>
             <p id="simulation-builder-status" role="status" aria-live="polite">Deterministic EChem, iR, and optional RDE signals · 0 hardware calls. Successful runs are saved through the local bridge.</p>
           </div>
           <div class="simulation-controls">
@@ -294,6 +294,7 @@
             </label>
             <button id="run-simulation" class="button primary" type="button">Run simulation</button>
           </div>
+          </details>
         </section>
 
         <section id="offline-checks" class="inline-smoke" aria-labelledby="smoke-status">
@@ -362,8 +363,8 @@
       </footer>
     </main>
     <script src="bridge-client.js?v=echem-bridge-9"></script>
-    <script src="echem-bridge.js?v=echem-bridge-13"></script>
-    <script src="protocols.js?v=echem-models-5"></script>
+    <script src="echem-bridge.js?v=echem-bridge-14"></script>
+    <script src="protocols.js?v=echem-models-6"></script>
     <script src="smoke-test.js?v=echem-simulator-2"></script>
     <script src="simulator.js?v=echem-simulator-4"></script>
     <script src="monitor.js?v=echem-ec-only-1"></script>

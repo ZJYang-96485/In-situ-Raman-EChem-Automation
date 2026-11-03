@@ -117,6 +117,42 @@ class FakeCommissioningWorker(FakeWorker):
                 "y_values": self.y_values[offset:end],
                 "units": {"x": "V", "y": "A"},
             }
+        if command == "sequence-start":
+            return {
+                "job_id": "job-760b-sequence",
+                "state": "starting",
+                "target_model": "760B",
+            }
+        if command == "sequence-status":
+            return {
+                "job_id": "job-760b-sequence",
+                "state": "completed",
+                "completed_steps": 3,
+                "data_points": 3,
+                "result_available": True,
+                "stop_requested": False,
+                "error": None,
+            }
+        if command == "sequence-stop":
+            return {"job_id": "job-760b-sequence", "state": "stopping"}
+        if command == "sequence-result":
+            all_rows = [
+                {"step_index": 2, "kind": "cv", "x": -0.1, "y": -1e-6, "x_unit": "V", "y_unit": "A"},
+                {"step_index": 2, "kind": "cv", "x": 0.1, "y": 1e-6, "x_unit": "V", "y_unit": "A"},
+                {"step_index": 3, "kind": "it", "x": 0.0, "y": 2e-6, "x_unit": "s", "y_unit": "A"},
+            ]
+            offset = int((payload or {}).get("offset", 0))
+            limit = int((payload or {}).get("limit", 4096))
+            end = min(len(all_rows), offset + limit)
+            return {
+                "job_id": "job-760b-sequence",
+                "offset": offset,
+                "count": max(0, end - offset),
+                "total": len(all_rows),
+                "next_offset": end if end < len(all_rows) else None,
+                "rows": all_rows[offset:end],
+                "completed_steps": 3,
+            }
         return super().request(command, payload=payload)
 
 
@@ -136,6 +172,21 @@ def bounded_760e_plan() -> dict[str, object]:
 
 def bounded_760b_plan() -> dict[str, object]:
     return {**bounded_760e_plan(), "target_model": "760B"}
+
+
+def direct_760b_plan() -> dict[str, object]:
+    cv = bounded_760b_plan()
+    cv.pop("target_model")
+    return {
+        "target_model": "760B",
+        "protocol_name": "Direct 760B sequence",
+        "ir_compensation": {"enabled": False, "mode": "automatic"},
+        "steps": [
+            {"kind": "wait", "duration_s": 0.0},
+            {"kind": "cv", **cv},
+            {"kind": "it", "potential_v": 0.1, "duration_s": 2.0, "sample_period_s": 0.5, "area_cm2": 1.0, "quiet_time_s": 0.0},
+        ],
+    }
 
 
 def commissioning_confirmations() -> dict[str, bool]:
@@ -364,6 +415,40 @@ class WorkerTransportTests(unittest.TestCase):
         self.assertTrue(
             worker.request_payloads[0][1]["confirmations"]["target_is_760b"]
         )
+
+    def test_760b_gateway_runs_sequence_and_saves_step_aware_csv(self) -> None:
+        worker = FakeCommissioningWorker("760B")
+        gateway = SDKWorkerCommissioningGateway(
+            worker,
+            target="CHI 760B SDK",
+            target_model="760B",
+            execution_enabled=True,
+        )
+        confirmations = {
+            name: True for name in REQUIRED_760B_COMMISSIONING_CONFIRMATIONS
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            preparation = gateway.prepare(
+                direct_760b_plan(), root, "Direct 760B sequence"
+            )
+            started = gateway.start(
+                str(preparation["preparation_token"]), confirmations
+            )
+            status = gateway.job_status(str(started["job_id"]))
+            raw = next(root.glob("runs/*/*/*/echem_raw.csv")).read_text(
+                encoding="ascii"
+            )
+
+        self.assertEqual("sequence", preparation["execution_mode"])
+        self.assertEqual(
+            ["sequence-start", "sequence-status", "sequence-result"],
+            worker.requests,
+        )
+        self.assertTrue(status["data_saved"])
+        self.assertIn("step_index,technique,x_name,x_unit,x_value,current_A", raw)
+        self.assertIn("2,cv,potential,V,-0.1,-1e-06", raw)
+        self.assertIn("3,it,time,s,0,2e-06", raw)
 
 
 if __name__ == "__main__":

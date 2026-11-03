@@ -3,12 +3,17 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { boundedSDKPlan, bounded760EPlan, describeSnapshot } = require("./echem-bridge.js");
+const {
+  boundedSDKPlan,
+  bounded760EPlan,
+  describeSnapshot,
+  direct760BSequencePlan,
+} = require("./echem-bridge.js");
 
 test("electrochemistry page exposes bridge, storage, and identity controls", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
   const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-9");
-  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-13");
+  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-14");
 
   assert.match(html, /id="echem-bridge-summary"/);
   assert.match(html, /id="echem-bridge-check-status"/);
@@ -227,7 +232,7 @@ test("single builder CV maps to the exact bounded 760B worker plan", () => {
   });
 });
 
-test("760B commissioning status exposes only the bounded internal-dummy workflow", () => {
+test("760B status exposes the direct verified protocol workflow", () => {
   const view = describeSnapshot({
     storage: { configured: true, available: true, folder_name: "data" },
     instrument: {
@@ -236,17 +241,82 @@ test("760B commissioning status exposes only the bounded internal-dummy workflow
       state: "ready_for_internal_dummy",
       discovery_enabled: true,
       experiment_control_enabled: true,
-      experiment_scope: "internal_dummy_bounded_cv",
+      experiment_scope: "validated_760b_sequence",
       remote_stop_available: true,
     },
   }, "760B");
 
-  assert.equal(view.header, "Local bridge connected - 760B dummy CV ready");
-  assert.equal(view.instrumentLabel, "CHI 760B SDK - bounded CV control ready");
-  assert.match(view.instrumentDetail, /one bounded internal-dummy CV/);
+  assert.equal(view.header, "Local bridge connected - 760B protocol runner ready");
+  assert.equal(view.instrumentLabel, "CHI 760B SDK - protocol control ready");
+  assert.match(view.instrumentDetail, /Wait, CV, and Amperometric i-t sequences/);
   assert.equal(view.discoveryEnabled, true);
   assert.equal(view.commissioning760EReady, true);
   assert.equal(view.dummyReady, false);
+});
+
+test("760B builder sequence maps Wait, CV, and amperometric i-t without discarding settings", () => {
+  const protocol = {
+    target_model: "760B",
+    protocol_name: "CV then i-t",
+    validation: { valid: true },
+    ir_compensation: { enabled: false, mode: "automatic", ru_retry_count: 5 },
+    steps: [
+      { source_technique: "wait", parameters: { duration_s: 2 } },
+      {
+        source_technique: "cv",
+        parameters: {
+          initial_voltage_v: 0,
+          apex1_voltage_v: 0.2,
+          apex2_voltage_v: -0.2,
+          final_voltage_v: 0,
+          scan_rate_v_s: 0.05,
+          step_size_v: 0.002,
+          cycles: 1,
+        },
+      },
+      {
+        source_technique: "it",
+        parameters: {
+          potential_v: 0.1,
+          duration_s: 10,
+          sample_period_s: 0.5,
+          area_cm2: 1,
+        },
+      },
+    ],
+  };
+
+  assert.deepEqual(direct760BSequencePlan(protocol), {
+    target_model: "760B",
+    protocol_name: "CV then i-t",
+    ir_compensation: { enabled: false, mode: "automatic", ru_retry_count: 5 },
+    steps: [
+      { kind: "wait", duration_s: 2 },
+      {
+        kind: "cv",
+        initial_potential_v: 0,
+        high_potential_v: 0.2,
+        low_potential_v: -0.2,
+        initial_scan_direction: "positive",
+        scan_rate_v_s: 0.05,
+        potential_step_v: 0.002,
+        quiet_time_s: 0,
+        sweep_segments: 2,
+      },
+      {
+        kind: "it",
+        potential_v: 0.1,
+        duration_s: 10,
+        sample_period_s: 0.5,
+        area_cm2: 1,
+        quiet_time_s: 0,
+      },
+    ],
+  });
+  assert.throws(
+    () => direct760BSequencePlan({ ...protocol, ir_compensation: { enabled: true } }),
+    /requires iR disabled/,
+  );
 });
 
 test("selected SDK model remains locked when the local bridge targets another model", () => {

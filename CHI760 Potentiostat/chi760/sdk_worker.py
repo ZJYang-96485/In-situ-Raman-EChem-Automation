@@ -142,6 +142,21 @@ CV_COMMISSIONING_PLAN_FIELDS = (
     "quiet_time_s",
     "sweep_segments",
 )
+SEQUENCE_PLAN_FIELDS = (
+    "target_model",
+    "protocol_name",
+    "ir_compensation",
+    "steps",
+)
+SEQUENCE_OPTIONAL_FIELDS = ("estimated_duration_s",)
+SEQUENCE_LIMITS = {
+    "max_steps": 32,
+    "wait_max_s": 3600.0,
+    "it_duration_max_s": 3600.0,
+    "it_sample_period_min_s": 0.001,
+    "it_potential_abs_max_v": 0.25,
+    "total_duration_max_s": 14_400.0,
+}
 
 
 def _commissioning_model(value: Any) -> str:
@@ -154,6 +169,17 @@ def _commissioning_model(value: Any) -> str:
 
 def _commissioning_confirmations(target_model: str) -> tuple[str, ...]:
     model = _commissioning_model(target_model)
+    if model == "760B":
+        return (
+            "commissioning_approved",
+            "target_is_760b",
+            "no_other_chi_measurement_running",
+            "chi_desktop_closed",
+            "cell_setup_reviewed",
+            "electrode_leads_verified",
+            "cell_output_confirmed_off",
+            "protocol_parameters_reviewed",
+        )
     return (
         "commissioning_approved",
         f"target_is_{model.lower()}",
@@ -262,6 +288,173 @@ def cv_plan_to_sdk_parameters(
         "m_inpcl": float(normalized["sweep_segments"]),
         "m_inpsi": normalized["potential_step_v"],
         "m_qt": normalized["quiet_time_s"],
+    }
+
+
+def validate_it_plan(
+    plan: Any,
+    *,
+    expected_target_model: str | None = None,
+) -> dict[str, Any]:
+    """Validate the installed 760B SDK's documented amperometric i-t fields."""
+
+    required = {
+        "target_model",
+        "potential_v",
+        "duration_s",
+        "sample_period_s",
+        "area_cm2",
+        "quiet_time_s",
+    }
+    if not isinstance(plan, dict):
+        raise ValueError("amperometric i-t plan must be an object")
+    unknown = sorted(set(plan) - required)
+    missing = sorted(required - set(plan))
+    if unknown:
+        raise ValueError(f"unsupported amperometric i-t fields: {', '.join(unknown)}")
+    if missing:
+        raise ValueError(f"missing amperometric i-t fields: {', '.join(missing)}")
+    target_model = _commissioning_model(plan["target_model"])
+    if expected_target_model is not None:
+        expected = _commissioning_model(expected_target_model)
+        if target_model != expected:
+            raise ValueError(
+                f"amperometric i-t target_model must match the loaded {expected} SDK"
+            )
+    normalized = {"target_model": target_model}
+    for name in (
+        "potential_v",
+        "duration_s",
+        "sample_period_s",
+        "area_cm2",
+        "quiet_time_s",
+    ):
+        normalized[name] = _finite_number(plan[name], name)
+    if abs(normalized["potential_v"]) > SEQUENCE_LIMITS["it_potential_abs_max_v"]:
+        raise ValueError("potential_v must stay within +/-0.25 V")
+    if not 0.001 <= normalized["duration_s"] <= SEQUENCE_LIMITS["it_duration_max_s"]:
+        raise ValueError("duration_s is outside the verified amperometric i-t range")
+    if not (
+        SEQUENCE_LIMITS["it_sample_period_min_s"]
+        <= normalized["sample_period_s"]
+        <= normalized["duration_s"]
+    ):
+        raise ValueError("sample_period_s must be from 0.001 s through duration_s")
+    if not 0.0 < normalized["area_cm2"] <= 1000.0:
+        raise ValueError("area_cm2 must be greater than zero and at most 1000")
+    if not 0.0 <= normalized["quiet_time_s"] <= CV_COMMISSIONING_LIMITS["quiet_time_max_s"]:
+        raise ValueError("quiet_time_s is outside the verified range")
+    return normalized
+
+
+def it_plan_to_sdk_parameters(
+    plan: Any,
+    *,
+    expected_target_model: str | None = None,
+) -> dict[str, float]:
+    """Map i-t fields to names present in the installed vendor SDK."""
+
+    normalized = validate_it_plan(
+        plan,
+        expected_target_model=expected_target_model,
+    )
+    return {
+        "m_ei": normalized["potential_v"],
+        "m_inpsi": normalized["sample_period_s"],
+        "m_st": normalized["duration_s"],
+        "m_qt": normalized["quiet_time_s"],
+    }
+
+
+def validate_sequence_plan(
+    plan: Any,
+    *,
+    expected_target_model: str | None = None,
+) -> dict[str, Any]:
+    """Validate a direct SDK sequence while rejecting unverified features."""
+
+    if not isinstance(plan, dict):
+        raise ValueError("experiment sequence must be an object")
+    unknown = sorted(
+        set(plan) - set(SEQUENCE_PLAN_FIELDS) - set(SEQUENCE_OPTIONAL_FIELDS)
+    )
+    missing = sorted(set(SEQUENCE_PLAN_FIELDS) - set(plan))
+    if unknown:
+        raise ValueError(f"unsupported experiment sequence fields: {', '.join(unknown)}")
+    if missing:
+        raise ValueError(f"missing experiment sequence fields: {', '.join(missing)}")
+    target_model = _commissioning_model(plan["target_model"])
+    if expected_target_model is not None:
+        expected = _commissioning_model(expected_target_model)
+        if target_model != expected:
+            raise ValueError(
+                f"experiment target_model must match the loaded {expected} SDK"
+            )
+    if target_model != "760B":
+        raise ValueError("direct protocol sequences are currently verified only for 760B")
+    protocol_name = plan.get("protocol_name")
+    if not isinstance(protocol_name, str) or not protocol_name.strip():
+        raise ValueError("protocol_name must be a non-empty string")
+    ir = plan.get("ir_compensation")
+    if not isinstance(ir, dict) or not isinstance(ir.get("enabled"), bool):
+        raise ValueError("ir_compensation must include a boolean enabled field")
+    if ir["enabled"]:
+        raise ValueError(
+            "760B iR compensation cannot run until its installed SDK parameter mapping is verified; disable iR for this hardware run"
+        )
+    steps = plan.get("steps")
+    if not isinstance(steps, list) or not 1 <= len(steps) <= SEQUENCE_LIMITS["max_steps"]:
+        raise ValueError("experiment sequence must contain 1 to 32 steps")
+    normalized_steps: list[dict[str, Any]] = []
+    estimated_duration = 0.0
+    for index, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            raise ValueError(f"step {index} must be an object")
+        kind = step.get("kind")
+        if kind == "wait":
+            if set(step) != {"kind", "duration_s"}:
+                raise ValueError(f"step {index} contains unsupported wait fields")
+            duration = _finite_number(step.get("duration_s"), "duration_s")
+            if not 0.0 <= duration <= SEQUENCE_LIMITS["wait_max_s"]:
+                raise ValueError(f"step {index} wait duration is outside 0 to 3600 seconds")
+            normalized = {"kind": "wait", "duration_s": duration}
+            estimated_duration += duration
+        elif kind == "cv":
+            cv = dict(step)
+            cv.pop("kind", None)
+            cv["target_model"] = target_model
+            normalized = {"kind": "cv", **validate_cv_commissioning_plan(
+                cv,
+                expected_target_model=target_model,
+            )}
+            span = (
+                normalized["high_potential_v"] - normalized["initial_potential_v"]
+                + normalized["high_potential_v"] - normalized["low_potential_v"]
+                + normalized["initial_potential_v"] - normalized["low_potential_v"]
+            )
+            estimated_duration += normalized["quiet_time_s"] + span / normalized["scan_rate_v_s"]
+        elif kind == "it":
+            it = dict(step)
+            it.pop("kind", None)
+            it["target_model"] = target_model
+            normalized = {"kind": "it", **validate_it_plan(
+                it,
+                expected_target_model=target_model,
+            )}
+            estimated_duration += normalized["quiet_time_s"] + normalized["duration_s"]
+        else:
+            raise ValueError(
+                f"step {index} technique is unsupported by direct 760B execution: {kind}"
+            )
+        normalized_steps.append(normalized)
+    if estimated_duration > SEQUENCE_LIMITS["total_duration_max_s"]:
+        raise ValueError("estimated experiment sequence duration exceeds four hours")
+    return {
+        "target_model": target_model,
+        "protocol_name": protocol_name.strip(),
+        "ir_compensation": dict(ir),
+        "steps": normalized_steps,
+        "estimated_duration_s": round(estimated_duration, 6),
     }
 
 
@@ -700,6 +893,43 @@ class LiveCVRunner:
             normalized,
             expected_target_model=self.target_model,
         )
+        return self._run_technique(
+            normalized,
+            sdk_parameters,
+            technique_name="CV",
+            technique_id=TECHNIQUE_IDS["CV"],
+            units={"x": "V", "y": "A"},
+            timeout_s=CV_COMMISSIONING_LIMITS["timeout_s"],
+        )
+
+    def run_it(self, plan: Any) -> dict[str, Any]:
+        normalized = validate_it_plan(
+            plan,
+            expected_target_model=self.target_model,
+        )
+        sdk_parameters = it_plan_to_sdk_parameters(
+            normalized,
+            expected_target_model=self.target_model,
+        )
+        return self._run_technique(
+            normalized,
+            sdk_parameters,
+            technique_name="IT",
+            technique_id=TECHNIQUE_IDS["IT"],
+            units={"x": "s", "y": "A"},
+            timeout_s=normalized["duration_s"] + normalized["quiet_time_s"] + 60.0,
+        )
+
+    def _run_technique(
+        self,
+        normalized: dict[str, Any],
+        sdk_parameters: dict[str, float],
+        *,
+        technique_name: str,
+        technique_id: int,
+        units: dict[str, str],
+        timeout_s: float,
+    ) -> dict[str, Any]:
         preflight = inspect_runtime(
             self.sdk_directory,
             self.runtime_directory,
@@ -727,7 +957,8 @@ class LiveCVRunner:
         search_handles = []
         payload: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
-            "operation": f"{self.target_model.lower()}_cv_commissioning",
+            "operation": f"{self.target_model.lower()}_{technique_name.lower()}_experiment",
+            "technique": technique_name,
             "target_model": self.target_model,
             "plan": normalized,
             "sdk_parameters": sdk_parameters,
@@ -738,7 +969,7 @@ class LiveCVRunner:
             "data_points": 0,
             "x_values": [],
             "y_values": [],
-            "units": {"x": "V", "y": "A"},
+            "units": units,
             "vendor_error_status": None,
         }
         set_parameter: Any = None
@@ -803,17 +1034,19 @@ class LiveCVRunner:
                 )
 
             payload["vendor_functions_called"] += 1
-            set_technique(TECHNIQUE_IDS["CV"])
+            set_technique(technique_id)
             payload["vendor_functions_called"] += 1
-            if int(get_technique()) != TECHNIQUE_IDS["CV"]:
-                raise RuntimeError("CV technique readback did not match the request")
+            if int(get_technique()) != technique_id:
+                raise RuntimeError(
+                    f"{technique_name} technique readback did not match the request"
+                )
 
             required_parameters = ("m_bDryRun", "m_bCellOn", *sdk_parameters)
             for parameter_name in required_parameters:
                 payload["vendor_functions_called"] += 1
                 if not bool(has_parameter(parameter_name.encode("ascii"))):
                     raise RuntimeError(
-                        f"required CV parameter is unavailable: {parameter_name}"
+                        f"required {technique_name} parameter is unavailable: {parameter_name}"
                     )
 
             self._set_and_verify_parameter(
@@ -839,7 +1072,9 @@ class LiveCVRunner:
                     payload,
                 )
             if self._abort_requested.is_set():
-                raise RuntimeError("CV commissioning was stopped before cell enable")
+                raise RuntimeError(
+                    f"{technique_name} experiment was stopped before cell enable"
+                )
 
             self._set_and_verify_parameter(
                 set_parameter,
@@ -851,15 +1086,17 @@ class LiveCVRunner:
             payload["vendor_functions_called"] += 1
             payload["run_returned"] = bool(run_experiment())
             if payload["run_returned"] is not True:
-                raise RuntimeError("CHI SDK rejected the commissioning CV")
+                raise RuntimeError(f"CHI SDK rejected the {technique_name} experiment")
 
-            deadline = monotonic() + CV_COMMISSIONING_LIMITS["timeout_s"]
+            deadline = monotonic() + timeout_s
             while True:
                 payload["vendor_functions_called"] += 1
                 if not bool(is_running()):
                     break
                 if monotonic() >= deadline:
-                    raise TimeoutError("commissioning CV exceeded its bounded timeout")
+                    raise TimeoutError(
+                        f"{technique_name} experiment exceeded its bounded timeout"
+                    )
                 sleep(0.05)
 
             capacity = int(CV_COMMISSIONING_LIMITS["data_capacity"])
@@ -868,16 +1105,20 @@ class LiveCVRunner:
             payload["vendor_functions_called"] += 1
             count = int(get_data(x_buffer, y_buffer, capacity))
             if count < 0 or count > capacity:
-                raise RuntimeError("CHI SDK returned an invalid CV data count")
+                raise RuntimeError(
+                    f"CHI SDK returned an invalid {technique_name} data count"
+                )
             x_values = [float(x_buffer[index]) for index in range(count)]
             y_values = [float(y_buffer[index]) for index in range(count)]
             if count == 0 and not self._abort_requested.is_set():
-                raise RuntimeError("CHI SDK returned no CV data")
+                raise RuntimeError(f"CHI SDK returned no {technique_name} data")
             if any(
                 not (-float("inf") < value < float("inf"))
                 for value in (*x_values, *y_values)
             ):
-                raise RuntimeError("CHI SDK returned non-finite CV data")
+                raise RuntimeError(
+                    f"CHI SDK returned non-finite {technique_name} data"
+                )
             payload["data_points"] = count
             payload["x_values"] = x_values
             payload["y_values"] = y_values
@@ -940,9 +1181,221 @@ class LiveCVRunner:
         tolerance = max(1e-6, abs(requested) * 1e-5)
         if abs(readback - requested) > tolerance:
             raise RuntimeError(
-                f"CV parameter readback mismatch for {name}: "
+                f"SDK parameter readback mismatch for {name}: "
                 f"requested {requested}, received {readback}"
             )
+
+
+class LiveSequenceRunner:
+    """Execute a validated 760B Wait/CV/i-t sequence in order."""
+
+    def __init__(self, technique_runner: LiveCVRunner) -> None:
+        self.technique_runner = technique_runner
+        self.target_model = technique_runner.target_model
+        self._abort_requested = threading.Event()
+
+    def reset_stop(self) -> None:
+        self._abort_requested.clear()
+        self.technique_runner.reset_stop()
+
+    def run(self, plan: Any) -> dict[str, Any]:
+        normalized = validate_sequence_plan(
+            plan,
+            expected_target_model=self.target_model,
+        )
+        results: list[dict[str, Any]] = []
+        for index, step in enumerate(normalized["steps"], start=1):
+            if self._abort_requested.is_set():
+                break
+            kind = step["kind"]
+            if kind == "wait":
+                stopped = self._abort_requested.wait(step["duration_s"])
+                result = {
+                    "technique": "WAIT",
+                    "plan": step,
+                    "data_points": 0,
+                    "x_values": [],
+                    "y_values": [],
+                    "units": {"x": "s", "y": "A"},
+                    "stopped": stopped,
+                }
+            else:
+                technique_plan = {key: value for key, value in step.items() if key != "kind"}
+                if kind == "cv":
+                    result = self.technique_runner.run(technique_plan)
+                elif kind == "it":
+                    result = self.technique_runner.run_it(technique_plan)
+                else:  # pragma: no cover - validator owns this invariant
+                    raise RuntimeError(f"unsupported validated technique: {kind}")
+            result = dict(result)
+            result["step_index"] = index
+            result["kind"] = kind
+            results.append(result)
+            if self._abort_requested.is_set():
+                break
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "operation": f"{self.target_model.lower()}_experiment_sequence",
+            "target_model": self.target_model,
+            "plan": normalized,
+            "steps": results,
+            "completed_steps": len(results),
+            "data_points": sum(int(item.get("data_points", 0)) for item in results),
+            "stopped": self._abort_requested.is_set(),
+        }
+
+    def stop(self) -> None:
+        self._abort_requested.set()
+        self.technique_runner.stop()
+
+
+class SequenceExperimentJobManager:
+    """Own one asynchronous, model-bound direct experiment sequence."""
+
+    def __init__(self, runner: Any, *, target_model: str = "760B") -> None:
+        self.runner = runner
+        self.target_model = _commissioning_model(target_model)
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._job_id: str | None = None
+        self._state = "idle"
+        self._plan: dict[str, Any] | None = None
+        self._result: dict[str, Any] | None = None
+        self._error: str | None = None
+        self._stop_requested = False
+
+    def start(self, plan: Any, confirmations: Any) -> dict[str, Any]:
+        normalized = validate_sequence_plan(
+            plan,
+            expected_target_model=self.target_model,
+        )
+        if not isinstance(confirmations, dict) or not all(
+            confirmations.get(name) is True
+            for name in _commissioning_confirmations(self.target_model)
+        ):
+            raise ValueError(
+                f"all local {self.target_model} experiment confirmations are required"
+            )
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                raise ValueError(f"a {self.target_model} experiment is already active")
+            reset_stop = getattr(self.runner, "reset_stop", None)
+            if callable(reset_stop):
+                reset_stop()
+            self._job_id = uuid4().hex
+            self._state = "starting"
+            self._plan = normalized
+            self._result = None
+            self._error = None
+            self._stop_requested = False
+            self._thread = threading.Thread(
+                target=self._run,
+                name=f"chi{self.target_model.lower()}-experiment-sequence",
+                daemon=True,
+            )
+            self._thread.start()
+            job_id = self._job_id
+        return {"job_id": job_id, "state": "starting", "target_model": self.target_model}
+
+    def status(self, job_id: Any = None) -> dict[str, Any]:
+        with self._lock:
+            self._require_job(job_id)
+            result = self._result or {}
+            return {
+                "job_id": self._job_id,
+                "state": self._state,
+                "target_model": self.target_model,
+                "plan": dict(self._plan) if self._plan is not None else None,
+                "completed_steps": int(result.get("completed_steps", 0)),
+                "data_points": int(result.get("data_points", 0)),
+                "result_available": self._result is not None,
+                "stop_requested": self._stop_requested,
+                "error": self._error,
+            }
+
+    def stop(self, job_id: Any) -> dict[str, Any]:
+        with self._lock:
+            self._require_job(job_id)
+            if self._state not in {"starting", "running", "stopping"}:
+                raise ValueError(f"the {self.target_model} experiment is not active")
+            self._stop_requested = True
+            self._state = "stopping"
+        self.runner.stop()
+        return self.status(job_id)
+
+    def result_page(self, job_id: Any, offset: Any, limit: Any) -> dict[str, Any]:
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("result offset must be a non-negative integer")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 4096:
+            raise ValueError("result limit must be an integer from 1 to 4096")
+        with self._lock:
+            self._require_job(job_id)
+            if self._result is None:
+                raise ValueError("experiment result data is not available")
+            rows: list[dict[str, Any]] = []
+            for step in self._result.get("steps", []):
+                x_values = step.get("x_values", [])
+                y_values = step.get("y_values", [])
+                if not isinstance(x_values, list) or not isinstance(y_values, list) or len(x_values) != len(y_values):
+                    raise ValueError("experiment result channels are malformed")
+                units = step.get("units", {})
+                for x_value, y_value in zip(x_values, y_values):
+                    rows.append({
+                        "step_index": step.get("step_index"),
+                        "kind": step.get("kind"),
+                        "x": x_value,
+                        "y": y_value,
+                        "x_unit": units.get("x"),
+                        "y_unit": units.get("y"),
+                    })
+            end = min(len(rows), offset + limit)
+            return {
+                "job_id": self._job_id,
+                "offset": offset,
+                "count": max(0, end - offset),
+                "total": len(rows),
+                "next_offset": end if end < len(rows) else None,
+                "rows": rows[offset:end],
+                "completed_steps": self._result.get("completed_steps", 0),
+            }
+
+    def close(self, timeout_s: float = 2.0) -> None:
+        with self._lock:
+            thread = self._thread
+            active = self._state in {"starting", "running", "stopping"}
+            job_id = self._job_id
+        if active and job_id is not None:
+            try:
+                self.stop(job_id)
+            except (OSError, RuntimeError, ValueError):
+                pass
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=max(0.0, timeout_s))
+
+    def _run(self) -> None:
+        with self._lock:
+            plan = dict(self._plan or {})
+            if self._stop_requested:
+                self._state = "stopped"
+                return
+            self._state = "running"
+        try:
+            result = self.runner.run(plan)
+            if not isinstance(result, dict):
+                raise RuntimeError("live sequence runner returned a non-object result")
+            with self._lock:
+                self._result = result
+                self._state = "stopped" if self._stop_requested or result.get("stopped") else "completed"
+        except Exception as error:
+            with self._lock:
+                self._error = str(error)
+                self._state = "error"
+
+    def _require_job(self, job_id: Any) -> None:
+        if self._job_id is None:
+            raise ValueError(f"no {self.target_model} experiment has been started")
+        if job_id is not None and job_id != self._job_id:
+            raise ValueError(f"{self.target_model} experiment job id does not match")
 
 
 class CVCommissioningJobManager:
@@ -1098,9 +1551,20 @@ class CVCommissioningJobManager:
             )
 
     def _validate_confirmations(self, confirmations: Any) -> None:
+        required = _commissioning_confirmations(self.target_model)
+        if self.target_model == "760B":
+            required = (
+                "commissioning_approved",
+                "target_is_760b",
+                "no_other_chi_measurement_running",
+                "chi_desktop_closed",
+                "internal_dummy_cell_connected",
+                "external_sample_disconnected",
+                "electrode_leads_verified",
+                "cell_output_confirmed_off",
+            )
         if not isinstance(confirmations, dict) or not all(
-            confirmations.get(name) is True
-            for name in _commissioning_confirmations(self.target_model)
+            confirmations.get(name) is True for name in required
         ):
             raise ValueError(
                 f"all local {self.target_model} commissioning confirmations are required"
@@ -1115,6 +1579,7 @@ def serve_requests(
     enable_chi760e_commissioning: bool = False,
     enable_chi760b_commissioning: bool = False,
     commissioning_jobs: CVCommissioningJobManager | None = None,
+    sequence_jobs: SequenceExperimentJobManager | None = None,
     input_stream: Any = None,
     output_stream: Any = None,
 ) -> int:
@@ -1132,13 +1597,29 @@ def serve_requests(
     )
     jobs = commissioning_jobs
     if jobs is None:
+        technique_runner = LiveCVRunner(
+            sdk_directory,
+            runtime_directory,
+            dll_name=dll_name,
+            target_model=commissioning_target_model,
+        )
         jobs = CVCommissioningJobManager(
-            LiveCVRunner(
+            technique_runner,
+            target_model=commissioning_target_model,
+        )
+    else:
+        technique_runner = None
+    sequences = sequence_jobs
+    if sequences is None and commissioning_target_model == "760B":
+        if technique_runner is None:
+            technique_runner = LiveCVRunner(
                 sdk_directory,
                 runtime_directory,
                 dll_name=dll_name,
                 target_model=commissioning_target_model,
-            ),
+            )
+        sequences = SequenceExperimentJobManager(
+            LiveSequenceRunner(technique_runner),
             target_model=commissioning_target_model,
         )
     for raw_line in source:
@@ -1214,8 +1695,30 @@ def serve_requests(
                     request.get("offset", 0),
                     request.get("limit", 4096),
                 )
+            elif command == "sequence-start":
+                if not commissioning_enabled or sequences is None:
+                    raise ValueError("direct experiment sequences are disabled for this worker")
+                result = sequences.start(request.get("plan"), request.get("confirmations"))
+            elif command == "sequence-status":
+                if not commissioning_enabled or sequences is None:
+                    raise ValueError("direct experiment sequences are disabled for this worker")
+                result = sequences.status(request.get("job_id"))
+            elif command == "sequence-stop":
+                if not commissioning_enabled or sequences is None:
+                    raise ValueError("direct experiment sequences are disabled for this worker")
+                result = sequences.stop(request.get("job_id"))
+            elif command == "sequence-result":
+                if not commissioning_enabled or sequences is None:
+                    raise ValueError("direct experiment sequences are disabled for this worker")
+                result = sequences.result_page(
+                    request.get("job_id"),
+                    request.get("offset", 0),
+                    request.get("limit", 4096),
+                )
             elif command == "shutdown":
                 jobs.close()
+                if sequences is not None:
+                    sequences.close()
                 result = {
                     "schema_version": SCHEMA_VERSION,
                     "operation": "shutdown",
