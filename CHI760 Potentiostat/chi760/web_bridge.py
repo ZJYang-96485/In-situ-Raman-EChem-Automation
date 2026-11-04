@@ -60,12 +60,13 @@ from .worker_transport import (
 )
 
 
-BRIDGE_VERSION = "0.11.0"
+BRIDGE_VERSION = "0.12.0"
 BRIDGE_COOKIE_NAME = "spectraloop_bridge_session"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_SIMULATION_SAVE_BYTES = 64 * 1024 * 1024
+MAX_REAL_RUN_POINTS = 500_000
 DEFAULT_ALLOWED_ORIGINS = frozenset(
     {"https://spectraloop.org", "https://www.spectraloop.org"}
 )
@@ -821,6 +822,323 @@ def _save_simulation_session(storage_root: Path, session: Any) -> dict[str, Any]
     }
 
 
+def _load_json_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise BridgeRequestError(
+            "run_data_unavailable",
+            f"The saved {label} could not be read.",
+            500,
+        ) from error
+    if not isinstance(value, dict):
+        raise BridgeRequestError(
+            "run_data_unavailable",
+            f"The saved {label} is not a JSON object.",
+            500,
+        )
+    return value
+
+
+def _latest_real_run_directory(storage_root: Path) -> Path:
+    runs_root = storage_root / "runs"
+    try:
+        candidates = [
+            metadata.parent
+            for metadata in runs_root.glob("*/*/trial-*/metadata.json")
+            if (metadata.parent / "echem_raw.csv").is_file()
+        ]
+        return max(
+            candidates,
+            key=lambda directory: (directory / "metadata.json").stat().st_mtime_ns,
+        )
+    except (OSError, ValueError) as error:
+        raise BridgeRequestError(
+            "real_run_not_found",
+            "No saved real CHI run is available in the selected data folder.",
+            404,
+        ) from error
+
+
+def _fallback_ir_report(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    parameters = metadata.get("parameters")
+    ir_plan = parameters.get("ir_compensation") if isinstance(parameters, Mapping) else None
+    ir_requested = isinstance(ir_plan, Mapping) and ir_plan.get("enabled") is True
+    reason = (
+        "iR compensation was requested, but this saved run contains no measured Ru or "
+        "verified compensation readback."
+        if ir_requested
+        else "Disabled in protocol; Ru was not measured and compensation was not applied."
+    )
+    acquisition = metadata.get("acquisition")
+    sensitivity = (
+        acquisition.get("current_sensitivity_a_per_v")
+        if isinstance(acquisition, Mapping)
+        else None
+    )
+    sensitivity_index = (
+        acquisition.get("current_sensitivity_libec_index")
+        if isinstance(acquisition, Mapping)
+        else None
+    )
+    return {
+        "schema_origin": "ZJYang-96485/RDE compatible run report",
+        "requested": ir_requested,
+        "requested_mode": ir_plan.get("mode") if isinstance(ir_plan, Mapping) else None,
+        "compensation_fraction": (
+            ir_plan.get("target_compensation_fraction")
+            if isinstance(ir_plan, Mapping)
+            else None
+        ),
+        "ru_attempts_ohm": [],
+        "ru_attempt_diagnostics": [],
+        "ru_selected_ohm": None,
+        "ru_repeatability": None,
+        "ru_validation_passed": False,
+        "ru_failure_reason": reason,
+        "measurement_without_ir_compensation": True,
+        "ru_applied_ohm": None,
+        "ir_compensation_enabled": False,
+        "ir_compensation_reason": reason,
+        "ir_compensation_resistance_readback_ohm": None,
+        "current_range_mode": "fixed_sensitivity" if sensitivity is not None else "not_recorded",
+        "current_range_autoranging": (
+            acquisition.get("automatic_sensitivity_switching")
+            if isinstance(acquisition, Mapping)
+            else None
+        ),
+        "current_range_initial_target_a": None,
+        "current_range_initial_setting": (
+            {
+                "sensitivity_a_per_v": sensitivity,
+                "libec_index": sensitivity_index,
+            }
+            if sensitivity is not None
+            else None
+        ),
+        "started_at": metadata.get("started_at"),
+        "completed_at": metadata.get("completed_at"),
+    }
+
+
+def _normalized_real_run_plan(
+    protocol: Mapping[str, Any], metadata: Mapping[str, Any]
+) -> dict[str, Any]:
+    parameters = metadata.get("parameters")
+    if isinstance(parameters, Mapping):
+        return dict(parameters)
+    commissioning = protocol.get("commissioning_plan")
+    if isinstance(commissioning, Mapping):
+        return dict(commissioning)
+    return dict(protocol)
+
+
+def _read_real_run_rows(raw_path: Path) -> list[dict[str, Any]]:
+    points: list[dict[str, Any]] = []
+    try:
+        with raw_path.open("r", encoding="ascii", newline="") as stream:
+            reader = csv.DictReader(stream)
+            fields = set(reader.fieldnames or [])
+            sequence_format = {
+                "step_index",
+                "technique",
+                "x_unit",
+                "x_value",
+                "current_A",
+            }.issubset(fields)
+            bounded_format = {"potential_V", "current_A"}.issubset(fields)
+            if not sequence_format and not bounded_format:
+                raise ValueError("unsupported EChem CSV columns")
+            for row_number, row in enumerate(reader, start=2):
+                if len(points) >= MAX_REAL_RUN_POINTS:
+                    raise ValueError(
+                        f"run exceeds the {MAX_REAL_RUN_POINTS:,}-point browser limit"
+                    )
+                if sequence_format:
+                    step_index = int(row["step_index"])
+                    technique = str(row["technique"]).strip().lower()
+                    x_value = float(row["x_value"])
+                else:
+                    step_index = 1
+                    technique = "cv"
+                    x_value = float(row["potential_V"])
+                current = float(row["current_A"])
+                if (
+                    step_index < 1
+                    or technique not in {"cv", "it"}
+                    or not math.isfinite(x_value)
+                    or not math.isfinite(current)
+                ):
+                    raise ValueError(f"invalid value on CSV row {row_number}")
+                points.append(
+                    {
+                        "step_index": step_index,
+                        "technique": technique,
+                        "x_value": x_value,
+                        "current_a": current,
+                    }
+                )
+    except (OSError, TypeError, ValueError) as error:
+        raise BridgeRequestError(
+            "run_data_unavailable",
+            f"The saved real EChem CSV could not be loaded: {error}",
+            500,
+        ) from error
+    if not points:
+        raise BridgeRequestError(
+            "run_data_unavailable",
+            "The saved real EChem CSV contains no data points.",
+            500,
+        )
+    return points
+
+
+def _real_run_records(
+    raw_points: list[dict[str, Any]], plan: Mapping[str, Any]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    raw_by_step: dict[int, list[dict[str, Any]]] = {}
+    for point in raw_points:
+        raw_by_step.setdefault(point["step_index"], []).append(point)
+
+    plan_steps = plan.get("steps")
+    if isinstance(plan_steps, list):
+        steps = [dict(step) if isinstance(step, Mapping) else {} for step in plan_steps]
+    else:
+        steps = [{**dict(plan), "kind": "cv"}]
+    highest_step = max(max(raw_by_step), len(steps))
+    elapsed_cursor = 0.0
+    sequence = 0
+    previous_current: float | None = None
+    previous_elapsed: float | None = None
+    charge_c = 0.0
+    records: list[dict[str, Any]] = []
+    events: list[dict[str, Any]] = [
+        {
+            "elapsed_s": 0.0,
+            "type": "real_run_loaded",
+            "label": "Saved CHI run loaded",
+            "detail": "Real data read from echem_raw.csv",
+        }
+    ]
+
+    for step_index in range(1, highest_step + 1):
+        step = steps[step_index - 1] if step_index <= len(steps) else {}
+        kind = str(step.get("kind") or "").lower()
+        step_points = raw_by_step.get(step_index, [])
+        if kind == "wait" and not step_points:
+            events.append(
+                {
+                    "elapsed_s": elapsed_cursor,
+                    "type": "wait",
+                    "label": f"Step {step_index}: wait",
+                    "detail": f"{float(step.get('duration_s', 0.0)):.6g} s",
+                }
+            )
+            elapsed_cursor += max(0.0, float(step.get("duration_s", 0.0)))
+            continue
+        if not step_points:
+            continue
+        technique = step_points[0]["technique"]
+        quiet_time = max(0.0, float(step.get("quiet_time_s", 0.0)))
+        step_base = elapsed_cursor + quiet_time
+        events.append(
+            {
+                "elapsed_s": step_base,
+                "type": "step_started",
+                "label": f"Step {step_index}: {technique.upper()}",
+                "detail": "Saved real CHI acquisition",
+            }
+        )
+        previous_x: float | None = None
+        scan_rate = float(step.get("scan_rate_v_s", 0.0) or 0.0)
+        last_step_elapsed = step_base
+        for point_index, point in enumerate(step_points):
+            x_value = float(point["x_value"])
+            if technique == "it":
+                elapsed = step_base + max(0.0, x_value)
+                potential = float(step.get("potential_v", 0.0))
+            else:
+                if previous_x is None:
+                    elapsed = step_base
+                elif scan_rate > 0.0:
+                    elapsed = last_step_elapsed + abs(x_value - previous_x) / scan_rate
+                else:
+                    elapsed = last_step_elapsed + 1.0
+                potential = x_value
+            if records and elapsed <= records[-1]["elapsed_s"]:
+                elapsed = records[-1]["elapsed_s"] + 1e-9
+            current = float(point["current_a"])
+            if previous_current is not None and previous_elapsed is not None:
+                charge_c += 0.5 * (previous_current + current) * (elapsed - previous_elapsed)
+            records.append(
+                {
+                    "sequence": sequence,
+                    "step_index": step_index,
+                    "technique": technique.upper(),
+                    "source_technique": technique,
+                    "elapsed_s": elapsed,
+                    "potential_v": potential,
+                    "current_a": current,
+                    "chronocoulometry_c": charge_c,
+                    "quality_flags": [
+                        "real_chi_data",
+                        "elapsed_time_derived_from_protocol_and_acquired_axis",
+                    ],
+                }
+            )
+            sequence += 1
+            previous_x = x_value
+            previous_current = current
+            previous_elapsed = elapsed
+            last_step_elapsed = elapsed
+        elapsed_cursor = max(elapsed_cursor, last_step_elapsed)
+    return records, events
+
+
+def _load_latest_real_run(storage_root: Path) -> dict[str, Any]:
+    try:
+        resolved_root = storage_root.resolve(strict=True)
+        run_directory = _latest_real_run_directory(resolved_root).resolve(strict=True)
+        run_directory.relative_to(resolved_root)
+    except (OSError, ValueError) as error:
+        raise BridgeRequestError(
+            "run_data_unavailable",
+            "The latest real run is outside the selected storage folder.",
+            500,
+        ) from error
+    metadata = _load_json_object(run_directory / "metadata.json", "run metadata")
+    protocol = _load_json_object(run_directory / "protocol.json", "run protocol")
+    plan = _normalized_real_run_plan(protocol, metadata)
+    raw_points = _read_real_run_rows(run_directory / "echem_raw.csv")
+    records, events = _real_run_records(raw_points, plan)
+    relative_folder = run_directory.relative_to(resolved_root).as_posix()
+    ir_report = metadata.get("ir_compensation_report")
+    if not isinstance(ir_report, Mapping):
+        ir_report = _fallback_ir_report(metadata)
+    return {
+        "schema_version": "0.1-real-run",
+        "session_id": relative_folder.replace("/", "-"),
+        "terminal_state": metadata.get("state", "completed"),
+        "execution_mode": "real_chi_sdk",
+        "hardware_connected": True,
+        "hardware_calls": None,
+        "timing_quality": "derived_from_protocol_and_acquired_axis",
+        "data_source": "saved_real_chi_csv",
+        "folder": relative_folder,
+        "protocol_plan": plan,
+        "instruments": {
+            "electrochemistry": metadata.get("chi_identity", {}),
+        },
+        "acquisition": metadata.get("acquisition", {}),
+        "ir_compensation_report": dict(ir_report),
+        "electrochemistry": records,
+        "raman": [],
+        "events": events,
+        "started_at": metadata.get("started_at"),
+        "completed_at": metadata.get("completed_at"),
+    }
+
+
 class SpectraLoopHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     # On Windows, HTTPServer's SO_REUSEADDR default can allow two independent
@@ -874,10 +1192,23 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         route = urlsplit(self.path).path
-        if route == "/v1/status":
+        if route in {"/v1/status", "/v1/runs/latest"}:
             if not self._authorize_api():
                 return
-            self._json_response(HTTPStatus.OK, self.server.bridge_state.status_payload())
+            try:
+                if route == "/v1/status":
+                    payload = self.server.bridge_state.status_payload()
+                else:
+                    storage_root = self.server.bridge_state.storage.root
+                    if storage_root is None or not storage_root.is_dir():
+                        raise BridgeRequestError(
+                            "storage_required",
+                            "Choose an available storage folder first.",
+                        )
+                    payload = {"run": _load_latest_real_run(storage_root)}
+                self._json_response(HTTPStatus.OK, payload)
+            except BridgeRequestError as error:
+                self._json_error(error.status, error.code, str(error))
             return
         self._serve_static(route)
 
@@ -955,6 +1286,53 @@ class SpectraLoopRequestHandler(BaseHTTPRequestHandler):
                 self._json_response(
                     HTTPStatus.OK,
                     {"simulation": {"opened": True, "folder": relative_value}},
+                )
+                return
+            if route == "/v1/runs/open-folder":
+                storage_root = self.server.bridge_state.storage.root
+                if storage_root is None or not storage_root.is_dir():
+                    raise BridgeRequestError(
+                        "storage_required", "Choose an available storage folder first."
+                    )
+                relative_value = payload.get("folder")
+                if not isinstance(relative_value, str) or len(relative_value) > 500:
+                    raise BridgeRequestError(
+                        "invalid_run_folder", "A saved real run folder is required."
+                    )
+                relative = PurePosixPath(relative_value)
+                if (
+                    relative.is_absolute()
+                    or len(relative.parts) != 4
+                    or relative.parts[0] != "runs"
+                    or any(part in {"", ".", ".."} for part in relative.parts)
+                ):
+                    raise BridgeRequestError(
+                        "invalid_run_folder",
+                        "The requested folder must be a saved real run trial.",
+                    )
+                try:
+                    resolved_root = storage_root.resolve(strict=True)
+                    destination = storage_root.joinpath(*relative.parts).resolve(strict=True)
+                    destination.relative_to(resolved_root)
+                except (OSError, ValueError) as error:
+                    raise BridgeRequestError(
+                        "run_folder_unavailable",
+                        "The saved real run folder is no longer available.",
+                        404,
+                    ) from error
+                if (
+                    not destination.is_dir()
+                    or not destination.name.startswith("trial-")
+                    or not (destination / "echem_raw.csv").is_file()
+                ):
+                    raise BridgeRequestError(
+                        "invalid_run_folder",
+                        "The requested folder is not a saved real run trial.",
+                    )
+                self.server.bridge_state.folder_opener(destination)
+                self._json_response(
+                    HTTPStatus.OK,
+                    {"run": {"opened": True, "folder": relative_value}},
                 )
                 return
             sdk_route = re.fullmatch(

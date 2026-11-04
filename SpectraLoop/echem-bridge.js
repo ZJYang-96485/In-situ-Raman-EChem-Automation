@@ -394,6 +394,7 @@
           } else {
             elements.runner760EActionStatus.textContent = `${run.run_label} ${run.state}; ${run.data_points || 0} data points saved in ${run.folder || "data/runs"}.`;
             elements.runner760EActionStatus.style.color = "var(--safe)";
+            await globalThis.SpectraLoopMonitorCore?.loadLatestRealRun?.();
           }
         } else {
           elements.runner760EActionStatus.textContent = `${run.run_label || `${selectedModel} experiment`} is ${run.state}.`;

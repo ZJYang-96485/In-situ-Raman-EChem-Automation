@@ -303,8 +303,8 @@ function smokeCases() {
       id: "echem-data-contract",
       group: "Data integrity",
       title: "EChem export preserves timing provenance",
-      run: () => {
-        const payload = globalThis.SpectraLoopMonitorCore.buildSessionPayload();
+      run: (context) => {
+        const payload = globalThis.SpectraLoopMonitorCore.buildPreviewSession(context.include_rde);
         requireCondition(payload.hardware_connected === false && payload.timing_quality === "simulated_unverified", "preview timing was overstated");
         requireCondition(payload.electrochemistry.every((record) => Number.isFinite(record.source_timestamp_s)), "electrochemistry source timestamps are missing");
         requireCondition(Array.isArray(payload.raman) && payload.raman.length === 0, "the EChem-only export contains Raman frames");

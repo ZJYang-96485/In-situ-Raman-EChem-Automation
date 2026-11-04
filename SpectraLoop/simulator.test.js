@@ -171,7 +171,7 @@ test("electrochemistry page loads the cache-busted simulator before its runner",
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
   const runner = fs.readFileSync(path.join(__dirname, "echem.js"), "utf8");
   const simulatorAsset = "simulator.js?v=echem-simulator-4";
-  const runnerAsset = "echem.js?v=echem-simulator-5";
+  const runnerAsset = "echem.js?v=echem-real-data-1";
 
   assert.ok(html.indexOf(simulatorAsset) >= 0);
   assert.ok(html.indexOf(simulatorAsset) < html.indexOf(runnerAsset));
@@ -225,7 +225,7 @@ test("successful browser simulation is saved and shows its relative folder", asy
   const sessionStatus = { textContent: "" };
   const storageResult = { textContent: "" };
   const storageDetail = { textContent: "" };
-  const openButton = { disabled: true, textContent: "Open saved folder", addEventListener() {} };
+  const openButton = { disabled: true, textContent: "Open saved folder", dataset: {}, addEventListener() {} };
   const receipt = { classList: { toggle() {} } };
   const inertElement = { addEventListener() {} };
   const session = {

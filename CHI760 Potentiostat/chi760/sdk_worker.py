@@ -105,6 +105,16 @@ CV_DRY_RUN_PARAMETERS = {
     "m_inpsi": 0.002,
     "m_qt": 0.0,
 }
+# libec exposes sensitivity as an index rather than an A/V value.  The vendor
+# control lists twelve decade settings from 10^-12 through 10^-1 A/V, so index
+# 11 is the requested 10^-1 A/V range.  Keep automatic switching off so the
+# instrument cannot replace the explicitly requested range during a run.
+MANUAL_CURRENT_SENSITIVITY_A_PER_V = 1e-1
+MANUAL_CURRENT_SENSITIVITY_INDEX = 11
+MANUAL_CURRENT_SENSITIVITY_PARAMETERS = {
+    "m_bAutoSens": 0.0,
+    "m_iSens": float(MANUAL_CURRENT_SENSITIVITY_INDEX),
+}
 CV_COMMISSIONING_LIMITS = {
     "potential_abs_max_v": 0.25,
     "scan_rate_min_v_s": 0.01,
@@ -384,6 +394,7 @@ def direct_cv_plan_to_sdk_parameters(
         "m_inpsi": normalized["potential_step_v"],
         "m_qt": normalized["quiet_time_s"],
         "m_bFullCycle": 1.0 if final_is_initial else 0.0,
+        **MANUAL_CURRENT_SENSITIVITY_PARAMETERS,
     }
 
 
@@ -459,6 +470,7 @@ def it_plan_to_sdk_parameters(
         "m_inpsi": normalized["sample_period_s"],
         "m_st": normalized["duration_s"],
         "m_qt": normalized["quiet_time_s"],
+        **MANUAL_CURRENT_SENSITIVITY_PARAMETERS,
     }
 
 

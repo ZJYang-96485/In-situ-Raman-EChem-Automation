@@ -229,3 +229,24 @@ test("simulation storage uses only authenticated loopback endpoints", async () =
     folder: "simulations/2026-10-19/EChem test/trial-001",
   });
 });
+
+test("real run data uses authenticated loopback endpoints", async () => {
+  const requests = [];
+  const client = new BridgeClient({
+    token: "A_secure_test_token_123456789",
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return { ok: true, status: 200, json: async () => ({ run: { folder: "runs/2026-11-03/Real CV/trial-001" } }) };
+    },
+  });
+
+  await client.latestRealRun();
+  await client.openRealRunFolder("runs/2026-11-03/Real CV/trial-001");
+
+  assert.equal(requests[0].url, "http://127.0.0.1:8765/v1/runs/latest");
+  assert.equal(requests[0].options.method, "GET");
+  assert.equal(requests[1].url, "http://127.0.0.1:8765/v1/runs/open-folder");
+  assert.deepEqual(JSON.parse(requests[1].options.body), {
+    folder: "runs/2026-11-03/Real CV/trial-001",
+  });
+});

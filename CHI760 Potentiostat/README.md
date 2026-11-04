@@ -93,6 +93,9 @@ steps. The 760E path retains its bounded commissioning CV and browser
 confirmations. The direct 760B path has no browser confirmation checklist,
 commissioning voltage ceiling, or cycle cap. It maps cycles to the DLL's
 half-cycle sweep segments and lets the SDK/instrument enforce operating ranges.
+Direct 760B CV and amperometric i-t runs set `m_iSens=11`, corresponding to a
+fixed `1e-1 A/V` sensitivity, and set `m_bAutoSens=0`; both values are verified
+through the SDK parameter readback before the cell is enabled.
 The DLL has no independent Final E parameter; only return-to-Initial-E is
 available through `m_bFullCycle`. The worker verifies every transmitted
 parameter readback, calls `CHI_Stop` during cleanup, and
@@ -104,6 +107,13 @@ returning only the safe relative run folder. Each launcher enables only its matc
 public page refuses control when the selected model and bridge target differ. The inspected
 CHI 760D desktop package contains no matching `libec760d.dll`; it cannot be
 selected through the 760E worker merely by renaming the executable or folder.
+
+Each completed real run stores an RDE-compatible `ir_compensation_report` in
+`metadata.json`. It includes Ru attempts, selected Ru, repeatability, requested
+and applied resistance, enable/readback state, current-range information,
+reason, and timestamps. The installed 760B mapping does not yet expose verified
+Ru measurement/application calls, so those fields remain explicitly empty and
+the report says the run was uncompensated rather than inventing a value.
 
 ## CHI 760D internal-dummy commissioning path
 

@@ -446,6 +446,9 @@ class WorkerTransportTests(unittest.TestCase):
             raw = next(root.glob("runs/*/*/*/echem_raw.csv")).read_text(
                 encoding="ascii"
             )
+            metadata = json.loads(
+                next(root.glob("runs/*/*/*/metadata.json")).read_text(encoding="utf-8")
+            )
 
         self.assertEqual("sequence", preparation["execution_mode"])
         self.assertEqual(
@@ -456,6 +459,10 @@ class WorkerTransportTests(unittest.TestCase):
         self.assertIn("step_index,technique,x_name,x_unit,x_value,current_A", raw)
         self.assertIn("2,cv,potential,V,-0.1,-1e-06", raw)
         self.assertIn("3,it,time,s,0,2e-06", raw)
+        self.assertEqual(0.1, metadata["acquisition"]["current_sensitivity_a_per_v"])
+        self.assertFalse(metadata["acquisition"]["automatic_sensitivity_switching"])
+        self.assertEqual([], metadata["ir_compensation_report"]["ru_attempts_ohm"])
+        self.assertFalse(metadata["ir_compensation_report"]["ir_compensation_enabled"])
 
 
 if __name__ == "__main__":

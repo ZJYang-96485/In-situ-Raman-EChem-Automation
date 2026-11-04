@@ -515,7 +515,14 @@ class SDKWorkerTests(unittest.TestCase):
         self.assertEqual(["wait", "cv", "it"], [step["kind"] for step in normalized["steps"]])
         self.assertFalse(normalized["ir_compensation"]["enabled"])
         self.assertEqual(
-            {"m_ei": 0.1, "m_inpsi": 0.5, "m_st": 2.0, "m_qt": 0.0},
+            {
+                "m_ei": 0.1,
+                "m_inpsi": 0.5,
+                "m_st": 2.0,
+                "m_qt": 0.0,
+                "m_bAutoSens": 0.0,
+                "m_iSens": 11.0,
+            },
             it_parameters,
         )
         cv = {key: value for key, value in normalized["steps"][1].items() if key != "kind"}
@@ -525,6 +532,8 @@ class SDKWorkerTests(unittest.TestCase):
         self.assertEqual(-0.2, cv_parameters["m_el"])
         self.assertEqual(6.0, cv_parameters["m_inpcl"])
         self.assertEqual(0.0, cv_parameters["m_bFullCycle"])
+        self.assertEqual(0.0, cv_parameters["m_bAutoSens"])
+        self.assertEqual(11.0, cv_parameters["m_iSens"])
 
         unrestricted = validate_direct_cv_plan(cv, expected_target_model="760B")
         self.assertEqual(3, unrestricted["cycles"])

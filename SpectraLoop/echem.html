@@ -325,9 +325,10 @@
 
       <section id="data-view" role="tabpanel" data-echem-view="data" hidden>
         <div class="data-toolbar">
-          <div><strong id="simulation-session-title">Static preview</strong><span id="simulation-session-status">EChem simulation · timing unverified</span></div>
+          <div><strong id="simulation-session-title">Latest real CHI run</strong><span id="simulation-session-status">Open this tab to load saved instrument data</span></div>
           <div class="simulation-data-controls">
-            <span id="simulation-session-state" class="count-chip">Complete</span>
+            <span id="simulation-session-state" class="count-chip">Not loaded</span>
+            <button id="refresh-real-run" class="button ghost" type="button">Refresh real data</button>
             <label class="field inline-field"><span>Replay speed</span><select id="playback-speed"><option value="1">1×</option><option value="10" selected>10×</option><option value="50">50×</option><option value="200">200×</option></select></label>
             <button id="replay-simulation" class="button ghost" type="button">Replay</button>
             <button id="export-session" class="button primary" type="button">Export JSON</button>
@@ -337,17 +338,35 @@
         <section class="simulation-storage-receipt not-saved" aria-labelledby="simulation-storage-heading">
           <div>
             <p class="eyebrow">DATA STORAGE</p>
-            <h2 id="simulation-storage-heading">Saved simulation folder</h2>
-            <strong id="simulation-storage-result">No simulation has been saved in this session.</strong>
-            <p id="simulation-storage-detail">Connect the local bridge and choose a storage folder before running the simulation.</p>
+            <h2 id="simulation-storage-heading">Saved experiment folder</h2>
+            <strong id="simulation-storage-result">No real run has been loaded.</strong>
+            <p id="simulation-storage-detail">Connect the local bridge to load the latest saved CHI run.</p>
           </div>
           <button id="open-simulation-folder" class="button secondary" type="button" disabled>Open saved folder</button>
+        </section>
+
+        <section class="ir-run-report" aria-labelledby="ir-run-report-heading">
+          <div class="workspace-heading">
+            <div><p class="eyebrow">iR COMPENSATION REPORT</p><h2 id="ir-run-report-heading">Latest run</h2></div>
+            <span id="ir-report-state" class="count-chip">Not loaded</span>
+          </div>
+          <dl class="run-report-grid">
+            <div><dt>Current sensitivity</dt><dd id="ir-report-sensitivity">—</dd></div>
+            <div><dt>Requested mode</dt><dd id="ir-report-mode">—</dd></div>
+            <div><dt>Compensation target</dt><dd id="ir-report-target">—</dd></div>
+            <div><dt>Ru attempts</dt><dd id="ir-report-attempts">—</dd></div>
+            <div><dt>Selected Ru</dt><dd id="ir-report-selected">—</dd></div>
+            <div><dt>Repeatability</dt><dd id="ir-report-repeatability">—</dd></div>
+            <div><dt>Applied resistance</dt><dd id="ir-report-applied">—</dd></div>
+            <div><dt>Readback</dt><dd id="ir-report-readback">—</dd></div>
+          </dl>
+          <p id="ir-report-reason" class="micro-note">Load a real run to view its recorded iR preparation values.</p>
         </section>
 
         <div class="synchronized-plots" aria-label="Electrochemistry plot">
           <section class="timeline-panel" aria-labelledby="timeline-title">
             <div class="workspace-heading"><div><p class="eyebrow">ELECTROCHEMISTRY</p><h2 id="timeline-title">Potential and current</h2></div><span class="count-chip">Shared time</span></div>
-            <canvas id="timeline-canvas" class="data-canvas" width="680" height="350" aria-label="Simulated electrochemistry potential and current versus time"></canvas>
+            <canvas id="timeline-canvas" class="data-canvas" width="680" height="350" aria-label="Real electrochemistry potential and current on a shared elapsed-time axis"></canvas>
             <div class="playback-controls">
               <button id="play-toggle" class="button secondary" type="button">Play</button>
               <input id="time-slider" type="range" min="0" max="120" step="0.1" value="0" aria-label="Selected elapsed time" />
@@ -362,12 +381,12 @@
         <a href="setup.html">Experiment setup →</a>
       </footer>
     </main>
-    <script src="bridge-client.js?v=echem-bridge-9"></script>
-    <script src="echem-bridge.js?v=echem-bridge-15"></script>
+    <script src="bridge-client.js?v=echem-bridge-10"></script>
+    <script src="echem-bridge.js?v=echem-bridge-16"></script>
     <script src="protocols.js?v=echem-models-6"></script>
     <script src="smoke-test.js?v=echem-simulator-2"></script>
     <script src="simulator.js?v=echem-simulator-4"></script>
-    <script src="monitor.js?v=echem-ec-only-1"></script>
-    <script src="echem.js?v=echem-simulator-5"></script>
+    <script src="monitor.js?v=echem-real-data-1"></script>
+    <script src="echem.js?v=echem-real-data-1"></script>
   </body>
 </html>

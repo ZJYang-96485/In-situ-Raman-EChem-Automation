@@ -23,7 +23,11 @@ from typing import Any, Mapping, Protocol
 
 from .data_store import RunDataStore, RunWriter
 from .errors import VendorCallError, VendorCallTimeoutError
-from .sdk_worker import validate_sequence_plan
+from .sdk_worker import (
+    MANUAL_CURRENT_SENSITIVITY_A_PER_V,
+    MANUAL_CURRENT_SENSITIVITY_INDEX,
+    validate_sequence_plan,
+)
 
 
 WORKER_PROTOCOL_VERSION = "0.1"
@@ -1024,6 +1028,44 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
         completed_at: str | None = None,
         error: str | None = None,
     ) -> dict[str, Any]:
+        ir_plan = prepared.plan.get("ir_compensation", {})
+        ir_requested = isinstance(ir_plan, Mapping) and ir_plan.get("enabled") is True
+        ir_reason = (
+            "The protocol requested iR compensation, but the installed CHI SDK "
+            "mapping did not measure Ru or apply compensation."
+            if ir_requested
+            else "Disabled in protocol; Ru was not measured and compensation was not applied."
+        )
+        ir_report = {
+            "schema_origin": "ZJYang-96485/RDE compatible run report",
+            "requested": ir_requested,
+            "requested_mode": ir_plan.get("mode") if isinstance(ir_plan, Mapping) else None,
+            "compensation_fraction": (
+                ir_plan.get("target_compensation_fraction")
+                if isinstance(ir_plan, Mapping)
+                else None
+            ),
+            "ru_attempts_ohm": [],
+            "ru_attempt_diagnostics": [],
+            "ru_selected_ohm": None,
+            "ru_repeatability": None,
+            "ru_validation_passed": False,
+            "ru_failure_reason": ir_reason,
+            "measurement_without_ir_compensation": True,
+            "ru_applied_ohm": None,
+            "ir_compensation_enabled": False,
+            "ir_compensation_reason": ir_reason,
+            "ir_compensation_resistance_readback_ohm": None,
+            "current_range_mode": "fixed_sensitivity",
+            "current_range_autoranging": False,
+            "current_range_initial_target_a": None,
+            "current_range_initial_setting": {
+                "sensitivity_a_per_v": MANUAL_CURRENT_SENSITIVITY_A_PER_V,
+                "libec_index": MANUAL_CURRENT_SENSITIVITY_INDEX,
+            },
+            "started_at": prepared.started_at or prepared.prepared_at.isoformat(),
+            "completed_at": completed_at,
+        }
         payload: dict[str, Any] = {
             "started_at": prepared.started_at or prepared.prepared_at.isoformat(),
             "units": (
@@ -1037,6 +1079,12 @@ class SDKWorkerCommissioningGateway(SDKWorkerDiscoveryGateway):
                 else "CV"
             ),
             "parameters": prepared.plan,
+            "acquisition": {
+                "current_sensitivity_a_per_v": MANUAL_CURRENT_SENSITIVITY_A_PER_V,
+                "current_sensitivity_libec_index": MANUAL_CURRENT_SENSITIVITY_INDEX,
+                "automatic_sensitivity_switching": False,
+            },
+            "ir_compensation_report": ir_report,
             "software_version": f"SpectraLoop-CHI{self.target_model}-worker-0.1",
             "chi_identity": {
                 "model": f"CHI {self.target_model}",

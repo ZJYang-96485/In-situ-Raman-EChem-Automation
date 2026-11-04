@@ -36,8 +36,14 @@ derived CC, and commanded-only RDE values. Standard,
 trial-10, Ru-failure, acquisition-failure, and cleanup-failure scenarios remain
 entirely in the browser and always report zero hardware calls.
 
-The EChem-data view presents potential and current on a shared elapsed-time
-cursor. Raman is not generated or displayed in the current workspace.
+The EChem-data view loads the latest saved real CHI `echem_raw.csv` through the
+authenticated local bridge and presents potential and current on one shared
+elapsed-time cursor. For CV, elapsed time is derived from the acquired potential
+axis and protocol scan rate; this provenance is shown in the interface and
+export. The same view reports the run's fixed sensitivity and RDE-compatible iR
+fields. Raman is not generated or displayed in the current workspace. An
+explicit simulation button can still load a connection-free preview, but it is
+not the default data source.
 
 The compact offline check validates the current builder values. Every result is
 available on demand, and the exported report always records simulation mode and
@@ -96,7 +102,9 @@ cycle cap. Cycles are sent as the DLL's documented half-cycle sweep segments;
 the SDK and instrument enforce their supported ranges. Because that DLL has no
 independent Final E parameter, only a return to Initial E can be explicitly
 requested. Preparation and the separate local Windows start approval remain,
-and completed data are saved under the same date/task/trial layout.
+and completed data are saved under the same date/task/trial layout. CV and i-t
+acquisition use fixed `1e-1 A/V` sensitivity with automatic sensitivity switching
+disabled; the recorded acquisition and iR report are visible in **EChem Data**.
 
 For command-line development without the deployed site, start the bridge from
 the `CHI760 Potentiostat` directory without `--web-url`; it serves and opens

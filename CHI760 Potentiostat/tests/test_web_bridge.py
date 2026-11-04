@@ -544,6 +544,69 @@ class WebBridgeTests(unittest.TestCase):
             self.assertEqual(400, caught.exception.code)
             self.assertEqual("invalid_simulation", self.error_payload(caught.exception)["error"]["code"])  # type: ignore[index]
 
+    def test_latest_real_run_returns_synchronized_data_and_ir_report(self) -> None:
+        self.state.storage.configure(self.selected_folder)
+        trial = self.selected_folder / "runs" / "2026-11-03" / "Real CV" / "trial-001"
+        trial.mkdir(parents=True)
+        (trial / "protocol.json").write_text(
+            json.dumps({"commissioning_plan": {"protocol_name": "Real CV"}}),
+            encoding="utf-8",
+        )
+        (trial / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "state": "completed",
+                    "started_at": "2026-11-03T12:00:00+00:00",
+                    "completed_at": "2026-11-03T12:00:10+00:00",
+                    "chi_identity": {"model": "CHI 760B"},
+                    "parameters": {
+                        "protocol_name": "Real CV",
+                        "ir_compensation": {"enabled": False},
+                        "steps": [
+                            {
+                                "kind": "cv",
+                                "scan_rate_v_s": 0.1,
+                                "quiet_time_s": 0.0,
+                            }
+                        ],
+                    },
+                    "acquisition": {
+                        "current_sensitivity_a_per_v": 0.1,
+                        "current_sensitivity_libec_index": 11,
+                        "automatic_sensitivity_switching": False,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (trial / "echem_raw.csv").write_text(
+            "step_index,technique,x_name,x_unit,x_value,current_A\n"
+            "1,cv,potential,V,-0.1,-0.001\n"
+            "1,cv,potential,V,0.0,0.002\n"
+            "1,cv,potential,V,0.1,0.003\n",
+            encoding="ascii",
+        )
+
+        response, raw = self.request("/v1/runs/latest")
+        run = json.loads(raw.decode("utf-8"))["run"]
+
+        self.assertEqual(200, response.status)
+        self.assertEqual("real_chi_sdk", run["execution_mode"])
+        self.assertTrue(run["hardware_connected"])
+        self.assertEqual("runs/2026-11-03/Real CV/trial-001", run["folder"])
+        self.assertEqual([0.0, 1.0, 2.0], [point["elapsed_s"] for point in run["electrochemistry"]])
+        self.assertEqual(0.1, run["acquisition"]["current_sensitivity_a_per_v"])
+        self.assertEqual([], run["ir_compensation_report"]["ru_attempts_ohm"])
+        self.assertNotIn(str(self.selected_folder), raw.decode("utf-8"))
+
+        open_response, _open_raw = self.request(
+            "/v1/runs/open-folder",
+            method="POST",
+            payload={"folder": run["folder"]},
+        )
+        self.assertEqual(200, open_response.status)
+        self.assertEqual(trial.resolve(), self.opened_folders[-1])
+
     def test_discovery_requires_every_safety_confirmation(self) -> None:
         with self.assertRaises(HTTPError) as caught:
             self.request(

@@ -129,6 +129,17 @@
       });
     }
 
+    latestRealRun() {
+      return this.request("/v1/runs/latest");
+    }
+
+    openRealRunFolder(folder) {
+      return this.request("/v1/runs/open-folder", {
+        method: "POST",
+        body: { folder },
+      });
+    }
+
     discoverInstrument(confirmations) {
       return this.request("/v1/instrument/discover", {
         method: "POST",

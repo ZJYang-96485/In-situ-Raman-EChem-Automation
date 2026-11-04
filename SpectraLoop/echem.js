@@ -13,6 +13,8 @@ function showSimulationStorageResult({ folder = null, detail }) {
   result.textContent = folder || "Simulation was not saved.";
   detailElement.textContent = detail;
   openButton.disabled = !folder;
+  openButton.dataset.folder = folder || "";
+  openButton.dataset.folderKind = folder ? "simulation" : "";
 }
 
 function ensureSimulationCore() {
@@ -46,7 +48,7 @@ function ensureSimulationCore() {
   return simulatorRecoveryPromise;
 }
 
-function showEchemView(name, updateUrl = true) {
+function showEchemView(name, updateUrl = true, options = {}) {
   const target = name === "data" ? "data" : "protocol";
   echemViews.forEach((view) => { view.hidden = view.dataset.echemView !== target; });
   echemSwitches.forEach((button) => {
@@ -59,6 +61,9 @@ function showEchemView(name, updateUrl = true) {
     const url = new URL(window.location.href);
     url.searchParams.set("view", target);
     window.history.replaceState({}, "", url);
+  }
+  if (target === "data" && options.loadReal !== false) {
+    globalThis.SpectraLoopMonitorCore?.loadLatestRealRun?.();
   }
 }
 
@@ -79,7 +84,7 @@ async function runConnectionFreeSimulation() {
     const scenario = document.querySelector("#simulation-scenario").value;
     const session = simulator.buildSimulationSession(plan, { scenario });
     globalThis.SpectraLoopMonitorCore.loadSimulationSession(session, { autoplay: true });
-    showEchemView("data");
+    showEchemView("data", true, { loadReal: false });
     const bridgeClient = globalThis.SpectraLoopEchemBridgeCore?.getClient?.();
     if (!bridgeClient) {
       status.textContent = `${session.electrochemistry.length} EChem points generated · 0 hardware calls · not saved: check the local bridge and choose a storage folder.`;
@@ -109,10 +114,12 @@ async function runConnectionFreeSimulation() {
 }
 
 async function openSavedSimulationFolder() {
-  if (!lastSavedSimulationFolder) return;
   const button = document.querySelector("#open-simulation-folder");
   const detail = document.querySelector("#simulation-storage-detail");
   const client = globalThis.SpectraLoopEchemBridgeCore?.getClient?.();
+  const folder = button.dataset.folder || lastSavedSimulationFolder;
+  const folderKind = button.dataset.folderKind || "simulation";
+  if (!folder) return;
   if (!client) {
     detail.textContent = "The local bridge is not connected; start it and try again.";
     return;
@@ -120,7 +127,8 @@ async function openSavedSimulationFolder() {
   button.disabled = true;
   button.textContent = "Opening…";
   try {
-    await client.openSimulationFolder(lastSavedSimulationFolder);
+    if (folderKind === "run") await client.openRealRunFolder(folder);
+    else await client.openSimulationFolder(folder);
     detail.textContent = "Opened this trial in Windows File Explorer.";
   } catch (error) {
     detail.textContent = error instanceof Error ? error.message : String(error);
@@ -131,6 +139,7 @@ async function openSavedSimulationFolder() {
 }
 
 function markSimulationStale() {
+  if (globalThis.SpectraLoopMonitorCore?.isRealSession?.()) return;
   document.querySelector("#simulation-builder-status").textContent = "Protocol or scenario changed · run again to refresh EChem data.";
   document.querySelector("#simulation-session-status").textContent = "Previous preview/session · current builder values have not been simulated";
   const state = document.querySelector("#simulation-session-state");

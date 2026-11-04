@@ -107,9 +107,20 @@ function buildPreviewSession(withRde = false) {
   };
 }
 
-let currentSession = buildPreviewSession(false);
-let echem = currentSession.electrochemistry;
-let durationS = previewDurationS;
+let currentSession = {
+  schema_version: "0.1-empty",
+  session_id: "no-real-run-loaded",
+  terminal_state: "not_loaded",
+  execution_mode: "real_run_placeholder",
+  hardware_connected: false,
+  hardware_calls: 0,
+  protocol_plan: { protocol_name: "Latest real CHI run" },
+  electrochemistry: [],
+  raman: [],
+  events: [],
+};
+let echem = [];
+let durationS = 0;
 let selectedTimeS = 0;
 let playing = false;
 let playbackRate = 10;
@@ -301,33 +312,74 @@ function exportSession() {
 
 function sessionDuration(session) {
   const times = [
-    ...session.electrochemistry.map((record) => record.elapsed_s),
-    ...session.events.map((event) => event.elapsed_s),
+    ...(Array.isArray(session.electrochemistry) ? session.electrochemistry : []).map((record) => record.elapsed_s),
+    ...(Array.isArray(session.events) ? session.events : []).map((event) => event.elapsed_s),
   ].filter(Number.isFinite);
   return Math.max(0, ...times);
+}
+
+function formatOhms(value) {
+  return Number.isFinite(value) ? `${Number(value).toPrecision(6)} Ω` : "Not measured";
+}
+
+function renderIRReport() {
+  const report = currentSession.ir_compensation_report;
+  const state = document.querySelector("#ir-report-state");
+  const sensitivity = report?.current_range_initial_setting?.sensitivity_a_per_v
+    ?? currentSession.acquisition?.current_sensitivity_a_per_v;
+  document.querySelector("#ir-report-sensitivity").textContent = Number.isFinite(sensitivity)
+    ? `${Number(sensitivity).toExponential(1)} A/V (fixed)`
+    : "Not recorded";
+  document.querySelector("#ir-report-mode").textContent = report?.requested_mode || "Not requested";
+  document.querySelector("#ir-report-target").textContent = Number.isFinite(report?.compensation_fraction)
+    ? `${(Number(report.compensation_fraction) * 100).toPrecision(4)}%`
+    : "Not requested";
+  const attempts = Array.isArray(report?.ru_attempts_ohm) ? report.ru_attempts_ohm : [];
+  document.querySelector("#ir-report-attempts").textContent = attempts.length
+    ? attempts.map((value) => formatOhms(value)).join(", ")
+    : "None";
+  document.querySelector("#ir-report-selected").textContent = formatOhms(report?.ru_selected_ohm);
+  document.querySelector("#ir-report-repeatability").textContent = Number.isFinite(report?.ru_repeatability)
+    ? `${(Number(report.ru_repeatability) * 100).toPrecision(4)}%`
+    : "Not calculated";
+  document.querySelector("#ir-report-applied").textContent = formatOhms(report?.ru_applied_ohm);
+  document.querySelector("#ir-report-readback").textContent = formatOhms(report?.ir_compensation_resistance_readback_ohm);
+  const applied = report?.ir_compensation_enabled === true;
+  const requested = report?.requested === true;
+  state.textContent = applied ? "Applied" : requested ? "Not applied" : report ? "Disabled" : "Not loaded";
+  state.classList.toggle("failed", requested && !applied);
+  document.querySelector("#ir-report-reason").textContent = report?.ir_compensation_reason
+    || report?.ru_failure_reason
+    || "No iR compensation report is stored for this run.";
 }
 
 function renderSessionMeta() {
   const title = document.querySelector("#simulation-session-title");
   const status = document.querySelector("#simulation-session-status");
   const state = document.querySelector("#simulation-session-state");
-  const protocolName = currentSession.protocol_plan?.protocol_name || "Static preview";
+  const realRun = currentSession.execution_mode === "real_chi_sdk";
+  const protocolName = currentSession.protocol_plan?.protocol_name || (realRun ? "Real CHI run" : "Static preview");
   title.textContent = protocolName;
   const warningCount = currentSession.simulator?.warnings?.length || 0;
-  status.textContent = `${echem.length} EChem points · 0 hardware calls${warningCount ? ` · ${warningCount} simulator warning${warningCount === 1 ? "" : "s"}` : ""}`;
-  state.textContent = currentSession.terminal_state === "simulated_complete" ? "Complete" : "Failure visible";
-  state.classList.toggle("failed", currentSession.terminal_state !== "simulated_complete");
+  status.textContent = realRun
+    ? `${echem.length} real CHI points · shared elapsed time derived from protocol and acquired axis`
+    : `${echem.length} simulated EChem points · 0 hardware calls${warningCount ? ` · ${warningCount} simulator warning${warningCount === 1 ? "" : "s"}` : ""}`;
+  const complete = ["completed", "stopped", "simulated_complete"].includes(currentSession.terminal_state);
+  state.textContent = currentSession.terminal_state === "not_loaded"
+    ? "Not loaded"
+    : complete ? "Complete" : "Failure visible";
+  state.classList.toggle("failed", currentSession.terminal_state !== "not_loaded" && !complete);
   state.classList.remove("stale");
   document.querySelector("#timeline-title").textContent = `${protocolName} · electrochemistry`;
+  renderIRReport();
 }
 
-function loadSimulationSession(session, options = {}) {
-  if (!session || session.hardware_connected !== false || session.hardware_calls !== 0) throw new Error("Only connection-free sessions can be loaded");
+function loadSession(session, options = {}) {
   if (!Array.isArray(session.electrochemistry) || !session.electrochemistry.length || !Array.isArray(session.events)) {
-    throw new Error("Simulation session is incomplete");
+    throw new Error("EChem session is incomplete");
   }
   session.electrochemistry.slice(1).forEach((record, index) => {
-    if (!(record.elapsed_s > session.electrochemistry[index].elapsed_s)) throw new Error("Simulation timestamps must be strictly increasing");
+    if (!(record.elapsed_s > session.electrochemistry[index].elapsed_s)) throw new Error("EChem timestamps must be strictly increasing");
   });
   setPlaying(false);
   currentSession = session;
@@ -340,6 +392,60 @@ function loadSimulationSession(session, options = {}) {
   renderSessionMeta();
   updateSelection(0);
   if (options.autoplay) setPlaying(true);
+}
+
+function loadSimulationSession(session, options = {}) {
+  if (!session || session.hardware_connected !== false || session.hardware_calls !== 0) throw new Error("Only connection-free sessions can be loaded as simulations");
+  loadSession(session, options);
+}
+
+function loadRealSession(session, options = {}) {
+  if (!session || session.execution_mode !== "real_chi_sdk" || session.hardware_connected !== true) {
+    throw new Error("The bridge did not return a real CHI run");
+  }
+  loadSession(session, options);
+}
+
+function renderRealRunStorage(session) {
+  const receipt = document.querySelector(".simulation-storage-receipt");
+  const result = document.querySelector("#simulation-storage-result");
+  const detail = document.querySelector("#simulation-storage-detail");
+  const openButton = document.querySelector("#open-simulation-folder");
+  receipt.classList.remove("not-saved");
+  result.textContent = session.folder;
+  detail.textContent = "Real CHI data loaded from this trial inside the local bridge storage folder.";
+  openButton.disabled = false;
+  openButton.dataset.folder = session.folder;
+  openButton.dataset.folderKind = "run";
+}
+
+async function loadLatestRealRun() {
+  const refreshButton = document.querySelector("#refresh-real-run");
+  const status = document.querySelector("#simulation-session-status");
+  const state = document.querySelector("#simulation-session-state");
+  const client = globalThis.SpectraLoopEchemBridgeCore?.getClient?.();
+  refreshButton.disabled = true;
+  status.textContent = "Loading the latest saved real CHI run...";
+  try {
+    if (!client || typeof client.latestRealRun !== "function") {
+      throw new Error("The local bridge is not connected. Start the instrument launcher and check the bridge.");
+    }
+    const payload = await client.latestRealRun();
+    loadRealSession(payload.run);
+    renderRealRunStorage(payload.run);
+    return payload.run;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : String(error);
+    state.textContent = "Unavailable";
+    state.classList.add("failed");
+    return null;
+  } finally {
+    refreshButton.disabled = false;
+  }
+}
+
+function isRealSession() {
+  return currentSession.execution_mode === "real_chi_sdk";
 }
 
 function initializeMonitor() {
@@ -355,12 +461,23 @@ function initializeMonitor() {
   document.querySelector("#export-session").addEventListener("click", exportSession);
   document.querySelector("#playback-speed").addEventListener("change", (event) => { playbackRate = Number(event.target.value); });
   document.querySelector("#replay-simulation").addEventListener("click", () => { updateSelection(0); setPlaying(true); });
+  document.querySelector("#refresh-real-run").addEventListener("click", loadLatestRealRun);
   window.addEventListener("resize", () => updateSelection(selectedTimeS));
   renderSessionMeta();
   updateSelection(0);
 }
 
-const monitorCore = { buildEchemSeries, buildSessionPayload, buildPreviewSession, loadSimulationSession, nearestByTime, raman };
+const monitorCore = {
+  buildEchemSeries,
+  buildSessionPayload,
+  buildPreviewSession,
+  isRealSession,
+  loadLatestRealRun,
+  loadRealSession,
+  loadSimulationSession,
+  nearestByTime,
+  raman,
+};
 if (typeof globalThis !== "undefined") globalThis.SpectraLoopMonitorCore = monitorCore;
 if (typeof document !== "undefined" && document.querySelector("#timeline-canvas")) initializeMonitor();
 if (typeof module !== "undefined" && module.exports) module.exports = monitorCore;

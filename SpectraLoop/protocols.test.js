@@ -89,7 +89,8 @@ test("busy bench remains valid for offline planning and blocks unsupported 760B 
 
   plan.ir_compensation.enabled = true;
   result = validatePlan(plan);
-  assert.ok(result.errors.some((message) => message.includes("not available") && message.includes("760B")));
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.warnings.some((message) => message.includes("blocked") && message.includes("760B")));
 });
 
 test("saved plans reject unknown steps and malformed parameters instead of dropping or defaulting them", () => {

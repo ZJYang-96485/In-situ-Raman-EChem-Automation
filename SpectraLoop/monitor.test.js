@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { buildEchemSeries, buildSessionPayload, raman } = require("./monitor.js");
+const { buildEchemSeries, buildPreviewSession, raman } = require("./monitor.js");
 
 test("current data view presents EChem only", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
@@ -11,6 +11,8 @@ test("current data view presents EChem only", () => {
   const dataView = html.match(/<section id="data-view"[\s\S]*?<\/section>\s*<footer/)[0];
   assert.match(dataView, /class="synchronized-plots"/);
   assert.match(dataView, /id="timeline-canvas"/);
+  assert.match(dataView, /id="refresh-real-run"/);
+  assert.match(dataView, /id="ir-run-report-heading"/);
   assert.equal((dataView.match(/<canvas /g) || []).length, 1);
   assert.doesNotMatch(dataView, /spectrum|RAMAN|Raman/);
   assert.match(html, />EChem Data</);
@@ -42,7 +44,7 @@ test("RDE preview changes commanded RPM without inventing measured RPM", () => {
 });
 
 test("EChem export preserves source timing without Raman alignment fields", () => {
-  const payload = buildSessionPayload();
+  const payload = buildPreviewSession(false);
   assert.equal(payload.hardware_connected, false);
   assert.equal(payload.timing_quality, "simulated_unverified");
   assert.equal(raman.length, 0);

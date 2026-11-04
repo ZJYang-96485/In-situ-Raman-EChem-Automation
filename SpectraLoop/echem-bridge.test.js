@@ -12,8 +12,8 @@ const {
 
 test("electrochemistry page exposes bridge, storage, and identity controls", () => {
   const html = fs.readFileSync(path.join(__dirname, "echem.html"), "utf8");
-  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-9");
-  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-14");
+  const clientPosition = html.indexOf("bridge-client.js?v=echem-bridge-10");
+  const panelPosition = html.indexOf("echem-bridge.js?v=echem-bridge-16");
 
   assert.match(html, /id="echem-bridge-summary"/);
   assert.match(html, /id="echem-bridge-check-status"/);
